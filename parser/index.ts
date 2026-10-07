@@ -401,6 +401,7 @@ function detectModuleKind(
     sourceFile
       .getDescendantsOfKind(SyntaxKind.BinaryExpression)
       .some((expression) =>
+        expression.getOperatorToken().getKind() === SyntaxKind.EqualsToken &&
         isCommonJsExportTarget(expression.getLeft()),
       );
 
