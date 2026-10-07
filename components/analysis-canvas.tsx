@@ -34,7 +34,7 @@ interface Category {
   color: string;
 }
 
-interface PreviewCanvasProps {
+interface AnalysisCanvasProps {
   repositoryName: string;
   framework: string | null;
   graph: FoldedGraph;
@@ -78,7 +78,7 @@ type WalkResult = { direction: WalkDirection; paths: string[] } | null;
 const maxVisibleRows = 8;
 const moduleNodeTypes = { module: ModuleNode };
 
-export function PreviewCanvas(props: PreviewCanvasProps) {
+export function AnalysisCanvas(props: AnalysisCanvasProps) {
   return (
     <ReactFlowProvider>
       <Canvas {...props} />
@@ -94,7 +94,7 @@ function Canvas({
   categories,
   routeCount,
   unidentifiedFileCount,
-}: PreviewCanvasProps) {
+}: AnalysisCanvasProps) {
   const [expandedIds, setExpandedIds] = useState<Set<string>>(() => new Set());
   const [selection, setSelection] = useState<Selection>(null);
   const [hovered, setHovered] = useState<Exclude<Selection, null> | null>(null);

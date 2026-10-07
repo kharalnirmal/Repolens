@@ -82,6 +82,7 @@ interface WalkResult {
 
 export interface ParseRepositoryOptions {
   adapter?: ParserAdapter;
+  onFilesSelected?: (fileCount: number) => void | Promise<void>;
 }
 
 export async function parseRepository(
@@ -96,6 +97,7 @@ export async function parseRepository(
   }
 
   const walked = await walkRepository(root);
+  await options.onFilesSelected?.(walked.sources.length);
   const project = createProject(root);
   const sourceFilesByPath = new Map<string, SourceFile>();
 
@@ -185,7 +187,7 @@ export async function parseRepository(
 
 function createProject(root: string): Project {
   const configPath = ["tsconfig.json", "jsconfig.json"]
-    .map((fileName) => path.join(root, fileName))
+    .map((fileName) => `${root}${path.sep}${fileName}`)
     .find((candidate) => ts.sys.fileExists(candidate));
 
   if (configPath) {

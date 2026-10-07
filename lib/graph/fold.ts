@@ -30,10 +30,10 @@ interface DirectoryGroup {
 const targetNodeCount = 24;
 
 export function foldGraph(
-  files: readonly ParsedFile[],
+  files: readonly CanvasFile[],
   edges: readonly DependencyEdge[],
 ): FoldedGraph {
-  const canvasFiles = files.map(toCanvasFile);
+  const canvasFiles = [...files];
   let threshold = 2;
   let groups = foldAtThreshold(canvasFiles, threshold);
 
@@ -160,17 +160,6 @@ function shortestUniqueLabels(ids: readonly string[]): Map<string, string> {
   }
 
   return labels;
-}
-
-function toCanvasFile(file: ParsedFile): CanvasFile {
-  return {
-    path: file.path,
-    folder: file.folder,
-    lineCount: file.lineCount,
-    moduleKind: file.moduleKind,
-    fanIn: file.fanIn,
-    fanOut: file.fanOut,
-  };
 }
 
 function parentDirectory(directory: string): string {

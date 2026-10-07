@@ -70,7 +70,52 @@ export type Database = {
       };
     };
     Views: Record<string, never>;
-    Functions: Record<string, never>;
+    Functions: {
+      create_or_get_analysis: {
+        Args: {
+          p_repository_name: string;
+          p_repository_url: string;
+        };
+        Returns: {
+          analysis_id: string;
+          analysis_status: string;
+          was_created: boolean;
+        }[];
+      };
+      get_analysis_graph: {
+        Args: {
+          p_analysis_id: string;
+        };
+        Returns: Json;
+      };
+      restart_failed_analysis: {
+        Args: {
+          p_analysis_id: string;
+        };
+        Returns: boolean;
+      };
+      set_analysis_run_state: {
+        Args: {
+          p_analysis_id: string;
+          p_error_message?: string | null;
+          p_stage: string;
+          p_status: string;
+          p_status_message: string;
+        };
+        Returns: undefined;
+      };
+      store_analysis_result: {
+        Args: {
+          p_analysis_id: string;
+          p_commit_sha: string;
+          p_coverage: Json;
+          p_edges: Json;
+          p_files: Json;
+          p_framework: string | null;
+        };
+        Returns: undefined;
+      };
+    };
     Enums: Record<string, never>;
     CompositeTypes: Record<string, never>;
   };
