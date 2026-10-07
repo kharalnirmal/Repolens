@@ -20,6 +20,12 @@ import { Graph, layout } from "@dagrejs/dagre";
 import { useEffect, useState } from "react";
 
 import { ThemeControl } from "@/components/theme-control";
+import {
+  insightSentences,
+  walkDependencies,
+  type GraphInsights,
+  type WalkDirection,
+} from "@/lib/graph/analysis";
 import type { CanvasFile, FoldedGraph, FoldedNode } from "@/lib/graph/fold";
 
 interface Category {
@@ -32,6 +38,7 @@ interface PreviewCanvasProps {
   repositoryName: string;
   framework: string | null;
   graph: FoldedGraph;
+  insights: GraphInsights;
   categories: Category[];
   routeCount: number;
   unidentifiedFileCount: number;
@@ -50,6 +57,7 @@ interface ModuleNodeData extends Record<string, unknown> {
   dimmed: boolean;
   selectedFile: string | null;
   hoveredFile: string | null;
+  activeCategory: string | null;
   fileTypeColors: Record<string, string>;
   onClose: (id: string) => void;
   onHoverFile: (path: string | null) => void;
@@ -65,6 +73,7 @@ interface DependencyEdgeData extends Record<string, unknown> {
 type ModuleFlowNode = Node<ModuleNodeData, "module">;
 type DependencyFlowEdge = Edge<DependencyEdgeData>;
 type EdgeDirection = "incoming" | "outgoing" | "both";
+type WalkResult = { direction: WalkDirection; paths: string[] } | null;
 
 const maxVisibleRows = 8;
 const moduleNodeTypes = { module: ModuleNode };
@@ -81,6 +90,7 @@ function Canvas({
   repositoryName,
   framework,
   graph,
+  insights,
   categories,
   routeCount,
   unidentifiedFileCount,
@@ -89,6 +99,7 @@ function Canvas({
   const [selection, setSelection] = useState<Selection>(null);
   const [hovered, setHovered] = useState<Exclude<Selection, null> | null>(null);
   const [detailTab, setDetailTab] = useState<DetailTab>("structure");
+  const [activeCategory, setActiveCategory] = useState<string | null>(null);
   const [refitVersion, setRefitVersion] = useState(0);
   const { fitView, getZoom } = useReactFlow<ModuleFlowNode, DependencyFlowEdge>();
 
@@ -135,11 +146,16 @@ function Canvas({
         folderNode,
         expanded,
         dimmed:
-          (selection !== null || hovered !== null) &&
-          !active.nodeIds.has(folderNode.id),
+          activeCategory !== null
+            ? !folderNode.files.some(
+                (file) => fileExtension(file.path) === activeCategory,
+              )
+            : (selection !== null || hovered !== null) &&
+              !active.nodeIds.has(folderNode.id),
         selectedFile:
           selection?.kind === "file" ? selection.path : null,
         hoveredFile: hovered?.kind === "file" ? hovered.path : null,
+        activeCategory,
         fileTypeColors,
         onClose: closeNode,
         onHoverFile: (path) =>
@@ -176,11 +192,15 @@ function Canvas({
         stroke,
         strokeWidth: active.edgeIds.has(edge.id) ? 1.5 : 1,
         opacity:
-          selection === null && hovered === null
-            ? 0.32
-            : active.edgeIds.has(edge.id)
-              ? 0.9
-              : 0.06,
+          activeCategory !== null
+            ? edgeMatchesCategory(edge, activeCategory)
+              ? 0.32
+              : 0.04
+            : selection === null && hovered === null
+              ? 0.32
+              : active.edgeIds.has(edge.id)
+                ? 0.9
+                : 0.06,
       },
     };
   });
@@ -200,7 +220,7 @@ function Canvas({
           <div className="grid size-6 shrink-0 place-items-center border border-foreground bg-foreground font-mono text-[8px] font-bold tracking-[-0.08em] text-surface">
             RL
           </div>
-          <span className="font-mono text-xs font-semibold tracking-[-0.03em]">
+          <span className="text-xs font-semibold tracking-[-0.03em]">
             RepoLens
           </span>
           <span className="h-4 w-px bg-border" />
@@ -224,16 +244,29 @@ function Canvas({
           className="min-h-0 border-r border-border bg-surface"
         >
           <div className="flex h-9 items-center justify-center border-b border-border px-3 md:justify-start">
-            <span className="font-mono text-[9px] font-semibold text-muted">
+            <span className="text-[9px] font-semibold text-muted">
               <span className="md:hidden">F</span>
               <span className="hidden md:inline">File types</span>
             </span>
           </div>
           <div className="hidden py-1.5 md:block">
             {categories.map((category) => (
-              <div
-                className="grid grid-cols-[8px_1fr_auto] items-center gap-2 px-3 py-1.5 font-mono text-[10px]"
+              <button
+                aria-pressed={activeCategory === category.extension}
+                className={`grid w-full grid-cols-[8px_1fr_auto] items-center gap-2 border-l-2 px-2.5 py-1.5 text-left text-[10px] focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-accent ${
+                  activeCategory === category.extension
+                    ? "border-l-accent bg-surface-muted font-semibold text-foreground"
+                    : activeCategory === null
+                      ? "border-l-transparent hover:bg-surface-muted"
+                      : "border-l-transparent text-muted hover:bg-surface-muted hover:text-foreground"
+                }`}
                 key={category.extension}
+                onClick={() =>
+                  setActiveCategory((current) =>
+                    current === category.extension ? null : category.extension,
+                  )
+                }
+                type="button"
               >
                 <span
                   className="size-2"
@@ -241,17 +274,28 @@ function Canvas({
                 />
                 <span>{category.extension}</span>
                 <span className="tabular-nums text-muted">{category.count}</span>
-              </div>
+              </button>
             ))}
           </div>
           <div className="flex flex-col items-center gap-2 py-3 md:hidden">
             {categories.map((category) => (
-              <span
-                className="size-2"
+              <button
+                aria-label={`${category.extension}: ${category.count} files`}
+                aria-pressed={activeCategory === category.extension}
+                className={`size-5 border focus-visible:outline-2 focus-visible:outline-accent ${
+                  activeCategory === category.extension ? "border-foreground" : "border-transparent"
+                }`}
                 key={category.extension}
-                style={{ backgroundColor: category.color }}
+                onClick={() =>
+                  setActiveCategory((current) =>
+                    current === category.extension ? null : category.extension,
+                  )
+                }
                 title={`${category.extension}: ${category.count}`}
-              />
+                type="button"
+              >
+                <span className="mx-auto block size-2" style={{ backgroundColor: category.color }} />
+              </button>
             ))}
           </div>
         </aside>
@@ -293,8 +337,8 @@ function Canvas({
               className="!overflow-hidden !rounded-none !border !border-border !bg-surface !shadow-none [&_button]:!border-border [&_button]:!bg-surface [&_button]:!fill-foreground"
             />
           </ReactFlow>
-          <div className="pointer-events-none absolute left-3 top-3 border border-border bg-surface/95 px-2 py-1 font-mono text-[9px] text-muted">
-            Click a module to open it
+          <div className="pointer-events-none absolute left-3 top-3 border border-border bg-surface/95 px-2 py-1 text-[9px] text-muted">
+            Open a module to inspect its files
           </div>
         </main>
 
@@ -307,6 +351,7 @@ function Canvas({
             framework={framework}
             graph={graph}
             hovered={hovered}
+            insights={insights}
             repositoryName={repositoryName}
             routeCount={routeCount}
             selection={selection}
@@ -326,6 +371,7 @@ function DetailPane({
   framework,
   graph,
   hovered,
+  insights,
   repositoryName,
   routeCount,
   selection,
@@ -338,6 +384,7 @@ function DetailPane({
   framework: string | null;
   graph: FoldedGraph;
   hovered: Exclude<Selection, null> | null;
+  insights: GraphInsights;
   repositoryName: string;
   routeCount: number;
   selection: Selection;
@@ -365,7 +412,7 @@ function DetailPane({
         {(["structure", "explanation"] as const).map((tab) => (
           <button
             aria-selected={activeTab === tab}
-            className={`border-r border-border font-mono text-[9px] last:border-r-0 focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-accent ${
+            className={`border-r border-border text-[9px] last:border-r-0 focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-accent ${
               activeTab === tab
                 ? "bg-surface-muted font-semibold text-foreground"
                 : "text-muted hover:text-foreground"
@@ -392,6 +439,7 @@ function DetailPane({
             file={selectedFile}
             graph={graph}
             hovered={hovered}
+            key={selectedFile.path}
             onHover={onHover}
             onSelectFile={onSelectFile}
           />
@@ -409,6 +457,15 @@ function DetailPane({
             onSelectFile={onSelectFile}
           />
         )}
+        {activeTab === "structure" ? (
+          <InsightsPanel
+            graph={graph}
+            insights={insights}
+            hovered={hovered}
+            onHover={onHover}
+            onSelectFile={onSelectFile}
+          />
+        ) : null}
       </div>
     </>
   );
@@ -505,6 +562,7 @@ function FileDetails({
   onHover: (target: Exclude<Selection, null> | null) => void;
   onSelectFile: (path: string) => void;
 }) {
+  const [walkResult, setWalkResult] = useState<WalkResult>(null);
   const dependencies = graph.edges.filter((edge) => edge.sourcePath === file.path);
   const dependents = graph.edges.filter((edge) => edge.targetPath === file.path);
 
@@ -522,7 +580,51 @@ function FileDetails({
           <Fact label="Kind" value={file.moduleKind.toUpperCase()} />
           <Fact label="Length" value={`${file.lineCount} lines`} />
         </div>
+        <div className="mt-2 grid grid-cols-2 gap-px border border-border bg-border">
+          <WalkButton
+            active={walkResult?.direction === "incoming"}
+            direction="incoming"
+            label="Blast radius"
+            onClick={() =>
+              setWalkResult({
+                direction: "incoming",
+                paths: walkDependencies(file.path, graph.edges, "incoming"),
+              })
+            }
+          />
+          <WalkButton
+            active={walkResult?.direction === "outgoing"}
+            direction="outgoing"
+            label="Dependency chain"
+            onClick={() =>
+              setWalkResult({
+                direction: "outgoing",
+                paths: walkDependencies(file.path, graph.edges, "outgoing"),
+              })
+            }
+          />
+        </div>
       </div>
+      {walkResult ? (
+        <DetailSection
+          title={`${walkResult.direction === "incoming" ? "Blast radius" : "Dependency chain"} (${walkResult.paths.length})`}
+        >
+          {walkResult.paths.length === 0 ? (
+            <EmptyList>No files within two levels.</EmptyList>
+          ) : (
+            walkResult.paths.map((path) => (
+              <PathButton
+                graph={graph}
+                hovered={hovered}
+                key={path}
+                path={path}
+                onHover={onHover}
+                onSelect={onSelectFile}
+              />
+            ))
+          )}
+        </DetailSection>
+      ) : null}
       <DetailSection title={`Dependencies (${dependencies.length})`}>
         {dependencies.length === 0 ? (
           <EmptyList>Imports no repository files.</EmptyList>
@@ -556,6 +658,153 @@ function FileDetails({
         )}
       </DetailSection>
     </div>
+  );
+}
+
+function WalkButton({
+  active,
+  direction,
+  label,
+  onClick,
+}: {
+  active: boolean;
+  direction: WalkDirection;
+  label: string;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      aria-pressed={active}
+      className={`bg-surface px-2 py-2 text-left text-[9px] font-semibold focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-accent ${
+        active
+          ? direction === "incoming"
+            ? "text-incoming shadow-[inset_0_2px_0_var(--incoming)]"
+            : "text-outgoing shadow-[inset_0_2px_0_var(--outgoing)]"
+          : "text-muted hover:bg-surface-muted hover:text-foreground"
+      }`}
+      onClick={onClick}
+      type="button"
+    >
+      {label}
+    </button>
+  );
+}
+
+function InsightsPanel({
+  graph,
+  insights,
+  hovered,
+  onHover,
+  onSelectFile,
+}: {
+  graph: FoldedGraph;
+  insights: GraphInsights;
+  hovered: Exclude<Selection, null> | null;
+  onHover: (target: Exclude<Selection, null> | null) => void;
+  onSelectFile: (path: string) => void;
+}) {
+  const insightCount =
+    insights.unimported.length +
+    insights.unusualFanIn.length +
+    insights.cycles.length +
+    insights.oversized.length;
+
+  return (
+    <details className="group border-t border-border">
+      <summary className="flex cursor-pointer list-none items-center justify-between bg-surface-muted px-3 py-2 text-[9px] font-semibold focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-accent [&::-webkit-details-marker]:hidden">
+        <span className="flex items-center gap-2">
+          <span aria-hidden="true" className="w-2 font-mono text-muted group-open:hidden">+</span>
+          <span aria-hidden="true" className="hidden w-2 font-mono text-muted group-open:inline">−</span>
+          Insights
+        </span>
+        <span className="font-mono tabular-nums text-muted">{insightCount}</span>
+      </summary>
+      <InsightGroup
+        graph={graph}
+        paths={insights.unimported}
+        sentence={insightSentences.unimported}
+        hovered={hovered}
+        onHover={onHover}
+        onSelectFile={onSelectFile}
+      />
+      <InsightGroup
+        graph={graph}
+        paths={insights.unusualFanIn}
+        sentence={insightSentences.unusualFanIn}
+        hovered={hovered}
+        onHover={onHover}
+        onSelectFile={onSelectFile}
+      />
+      <section className="border-b border-border">
+        <p className="px-3 pb-1 pt-2 text-[9px] leading-4 text-muted">
+          {insightSentences.cycles}
+        </p>
+        {insights.cycles.length === 0 ? (
+          <EmptyList>None found.</EmptyList>
+        ) : (
+          insights.cycles.map((cycle) => (
+            <div className="border-t border-border" key={cycle.join("\u0000")}>
+              {cycle.map((path, index) => (
+                <PathButton
+                  count={index + 1}
+                  countLabel="cycle step"
+                  graph={graph}
+                  hovered={hovered}
+                  key={`${path}:${index}`}
+                  path={path}
+                  onHover={onHover}
+                  onSelect={onSelectFile}
+                />
+              ))}
+            </div>
+          ))
+        )}
+      </section>
+      <InsightGroup
+        graph={graph}
+        paths={insights.oversized}
+        sentence={insightSentences.oversized}
+        hovered={hovered}
+        onHover={onHover}
+        onSelectFile={onSelectFile}
+      />
+    </details>
+  );
+}
+
+function InsightGroup({
+  graph,
+  paths,
+  sentence,
+  hovered,
+  onHover,
+  onSelectFile,
+}: {
+  graph: FoldedGraph;
+  paths: readonly string[];
+  sentence: string;
+  hovered: Exclude<Selection, null> | null;
+  onHover: (target: Exclude<Selection, null> | null) => void;
+  onSelectFile: (path: string) => void;
+}) {
+  return (
+    <section className="border-b border-border">
+      <p className="px-3 pb-1 pt-2 text-[9px] leading-4 text-muted">{sentence}</p>
+      {paths.length === 0 ? (
+        <EmptyList>None found.</EmptyList>
+      ) : (
+        paths.map((path) => (
+          <PathButton
+            graph={graph}
+            hovered={hovered}
+            key={path}
+            path={path}
+            onHover={onHover}
+            onSelect={onSelectFile}
+          />
+        ))
+      )}
+    </section>
   );
 }
 
@@ -678,6 +927,7 @@ function ModuleNode({ data, selected }: NodeProps<ModuleFlowNode>) {
     dimmed,
     selectedFile,
     hoveredFile,
+    activeCategory,
     fileTypeColors,
     onClose,
     onHoverFile,
@@ -685,6 +935,9 @@ function ModuleNode({ data, selected }: NodeProps<ModuleFlowNode>) {
     onSelectFile,
   } = data;
   const updateNodeInternals = useUpdateNodeInternals();
+  const categoryMatchCount = activeCategory
+    ? folderNode.files.filter((file) => fileExtension(file.path) === activeCategory).length
+    : null;
 
   if (!expanded) {
     return (
@@ -698,7 +951,11 @@ function ModuleNode({ data, selected }: NodeProps<ModuleFlowNode>) {
         <Handle type="target" position={Position.Left} className="!size-1.5 !border-0 !bg-incoming" />
         <div className="min-w-0">
           <p className="truncate text-[11px] font-semibold">{folderNode.label}</p>
-          <p className="mt-0.5 text-[9px] text-muted">{folderNode.files.length} files</p>
+          <p className="mt-0.5 text-[9px] text-muted">
+            {categoryMatchCount === null
+              ? `${folderNode.files.length} files`
+              : `${categoryMatchCount} / ${folderNode.files.length} match`}
+          </p>
         </div>
         <div className="flex items-center justify-between text-[8px] tabular-nums">
           <span
@@ -745,7 +1002,11 @@ function ModuleNode({ data, selected }: NodeProps<ModuleFlowNode>) {
       >
         <span className="min-w-0">
           <span className="block truncate text-[11px] font-semibold">{folderNode.label}</span>
-          <span className="block text-[8px] text-muted">{folderNode.files.length} files</span>
+          <span className="block text-[8px] text-muted">
+            {categoryMatchCount === null
+              ? `${folderNode.files.length} files`
+              : `${categoryMatchCount} / ${folderNode.files.length} match`}
+          </span>
         </span>
         <span className="flex shrink-0 gap-2 text-[8px] tabular-nums">
           <span
@@ -782,6 +1043,9 @@ function ModuleNode({ data, selected }: NodeProps<ModuleFlowNode>) {
             key={file.path}
             selected={selectedFile === file.path}
             hovered={hoveredFile === file.path}
+            dimmed={
+              activeCategory !== null && fileExtension(file.path) !== activeCategory
+            }
             onHover={() => onHoverFile(file.path)}
             onLeave={() => onHoverNode(folderNode.id)}
             onSelect={onSelectFile}
@@ -797,6 +1061,7 @@ function FileRow({
   color,
   selected,
   hovered,
+  dimmed,
   onHover,
   onLeave,
   onSelect,
@@ -805,13 +1070,18 @@ function FileRow({
   color: string;
   selected: boolean;
   hovered: boolean;
+  dimmed: boolean;
   onHover: () => void;
   onLeave: () => void;
   onSelect: (path: string) => void;
 }) {
   const name = fileName(file.path);
   return (
-    <div className="relative h-6 border-b border-border last:border-b-0">
+    <div
+      className={`relative h-6 border-b border-border last:border-b-0 ${
+        dimmed ? "opacity-15" : ""
+      }`}
+    >
       <Handle
         id={`in:${file.path}`}
         type="target"
@@ -1014,4 +1284,13 @@ function getActiveElements(
   }
 
   return { nodeIds, edgeIds, edgeDirections };
+}
+
+function edgeMatchesCategory(
+  edge: DependencyFlowEdge,
+  category: string,
+): boolean {
+  return [...(edge.data?.sourcePaths ?? []), ...(edge.data?.targetPaths ?? [])].some(
+    (path) => fileExtension(path) === category,
+  );
 }

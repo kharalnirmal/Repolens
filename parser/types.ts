@@ -80,4 +80,5 @@ export interface AdapterContext {
 export interface ParserAdapter {
   readonly name: string;
   detect(context: AdapterContext): string | null;
+  isConventionEntry(filePath: string): boolean;
 }

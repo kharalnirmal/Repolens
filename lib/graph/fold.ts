@@ -38,7 +38,12 @@ export function foldGraph(
   let groups = foldAtThreshold(canvasFiles, threshold);
 
   while (groups.length > targetNodeCount) {
-    threshold += 1;
+    const nextGroupSize = Math.min(
+      ...groups
+        .filter((group) => group.id !== ".")
+        .map((group) => group.files.length),
+    );
+    threshold = nextGroupSize + 1;
     groups = foldAtThreshold(canvasFiles, threshold);
   }
 

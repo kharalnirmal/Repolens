@@ -3,7 +3,9 @@ import path from "node:path";
 import analysis from "./analysis";
 import { PreviewCanvas } from "./preview-canvas";
 
+import { calculateInsights } from "@/lib/graph/analysis";
 import { foldGraph } from "@/lib/graph/fold";
+import { fallbackAdapter } from "@/parser/adapter";
 
 const categoryColors = [
   "var(--file-kind-1)",
@@ -16,6 +18,16 @@ const categoryColors = [
 
 export default function PreviewPage() {
   const graph = foldGraph(analysis.files, analysis.edges);
+  const conventionEntryPaths = new Set(
+    analysis.files
+      .filter((file) => fallbackAdapter.isConventionEntry(file.path))
+      .map((file) => file.path),
+  );
+  const insights = calculateInsights(
+    analysis.files,
+    analysis.edges,
+    conventionEntryPaths,
+  );
   const counts = new Map<string, number>();
   for (const file of analysis.files) {
     const extension = path.posix.extname(file.path).slice(1) || "other";
@@ -34,6 +46,7 @@ export default function PreviewPage() {
       framework={analysis.adapter.framework}
       repositoryName={analysis.repository.name}
       graph={graph}
+      insights={insights}
       categories={categories}
       routeCount={0}
       unidentifiedFileCount={
