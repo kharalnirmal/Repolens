@@ -29,9 +29,16 @@ import {
 import type { CanvasFile, FoldedGraph, FoldedNode } from "@/lib/graph/fold";
 
 interface Category {
-  extension: string;
+  role: string;
+  label: string;
   count: number;
   color: string;
+}
+
+interface Route {
+  filePath: string;
+  method: string;
+  path: string;
 }
 
 interface AnalysisCanvasProps {
@@ -40,7 +47,7 @@ interface AnalysisCanvasProps {
   graph: FoldedGraph;
   insights: GraphInsights;
   categories: Category[];
-  routeCount: number;
+  routes: Route[];
   unidentifiedFileCount: number;
 }
 
@@ -57,8 +64,8 @@ interface ModuleNodeData extends Record<string, unknown> {
   dimmed: boolean;
   selectedFile: string | null;
   hoveredFile: string | null;
-  activeCategory: string | null;
-  fileTypeColors: Record<string, string>;
+  activeRole: string | null;
+  roleColors: Record<string, string>;
   onClose: (id: string) => void;
   onHoverFile: (path: string | null) => void;
   onHoverNode: (id: string | null) => void;
@@ -92,14 +99,14 @@ function Canvas({
   graph,
   insights,
   categories,
-  routeCount,
+  routes,
   unidentifiedFileCount,
 }: AnalysisCanvasProps) {
   const [expandedIds, setExpandedIds] = useState<Set<string>>(() => new Set());
   const [selection, setSelection] = useState<Selection>(null);
   const [hovered, setHovered] = useState<Exclude<Selection, null> | null>(null);
   const [detailTab, setDetailTab] = useState<DetailTab>("structure");
-  const [activeCategory, setActiveCategory] = useState<string | null>(null);
+  const [activeRole, setActiveRole] = useState<string | null>(null);
   const [refitVersion, setRefitVersion] = useState(0);
   const { fitView, getZoom } = useReactFlow<ModuleFlowNode, DependencyFlowEdge>();
 
@@ -122,13 +129,14 @@ function Canvas({
       setExpandedIds((current) => new Set(current).add(nodeId));
       setRefitVersion((version) => version + 1);
     }
+    setHovered(null);
     setSelection({ kind: "file", path: filePath });
   };
 
   const visualEdges = createVisualEdges(graph, expandedIds);
-  const active = getActiveElements(graph, visualEdges, hovered ?? selection);
-  const fileTypeColors = Object.fromEntries(
-    categories.map((category) => [category.extension, category.color]),
+  const active = getActiveElements(graph, visualEdges, selection);
+  const roleColors = Object.fromEntries(
+    categories.map((category) => [category.role, category.color]),
   );
   const dimensions = new Map(
     graph.nodes.map((node) => [node.id, nodeDimensions(node, expandedIds.has(node.id))]),
@@ -146,17 +154,14 @@ function Canvas({
         folderNode,
         expanded,
         dimmed:
-          activeCategory !== null
-            ? !folderNode.files.some(
-                (file) => fileExtension(file.path) === activeCategory,
-              )
-            : (selection !== null || hovered !== null) &&
-              !active.nodeIds.has(folderNode.id),
+          activeRole !== null
+            ? !folderNode.files.some((file) => file.role === activeRole)
+            : selection !== null && !active.nodeIds.has(folderNode.id),
         selectedFile:
           selection?.kind === "file" ? selection.path : null,
         hoveredFile: hovered?.kind === "file" ? hovered.path : null,
-        activeCategory,
-        fileTypeColors,
+        activeRole,
+        roleColors,
         onClose: closeNode,
         onHoverFile: (path) =>
           setHovered(path === null ? null : { kind: "file", path }),
@@ -168,7 +173,7 @@ function Canvas({
       draggable: false,
       selectable: true,
       selected: selection?.kind === "node" && selection.id === folderNode.id,
-      ariaLabel: `${folderNode.label}, ${folderNode.files.length} files, ${folderNode.fanIn} incoming and ${folderNode.fanOut} outgoing dependencies`,
+      ariaLabel: `${folderNode.label}, ${folderNode.files.length} files, imported by ${folderNode.fanIn}, imports ${folderNode.fanOut}`,
     };
   });
 
@@ -176,9 +181,9 @@ function Canvas({
     const direction = active.edgeDirections.get(edge.id);
     const stroke =
       direction === "incoming"
-        ? "var(--incoming)"
+        ? "var(--imported-by)"
         : direction === "outgoing"
-          ? "var(--outgoing)"
+          ? "var(--imports)"
           : direction === "both"
             ? "var(--accent)"
             : "var(--muted)";
@@ -192,11 +197,11 @@ function Canvas({
         stroke,
         strokeWidth: active.edgeIds.has(edge.id) ? 1.5 : 1,
         opacity:
-          activeCategory !== null
-            ? edgeMatchesCategory(edge, activeCategory)
+          activeRole !== null
+            ? edgeMatchesRole(graph, edge, activeRole)
               ? 0.32
               : 0.04
-            : selection === null && hovered === null
+            : selection === null
               ? 0.32
               : active.edgeIds.has(edge.id)
                 ? 0.9
@@ -241,29 +246,29 @@ function Canvas({
       <div className="grid min-h-0 flex-1 grid-cols-[3rem_minmax(18rem,1fr)_18rem] overflow-x-auto md:grid-cols-[11rem_minmax(18rem,1fr)_18rem]">
         <aside
           aria-label="File categories"
-          className="min-h-0 border-r border-border bg-surface"
+          className="tool-scrollbar min-h-0 overflow-y-auto border-r border-border bg-surface"
         >
           <div className="flex h-9 items-center justify-center border-b border-border px-3 md:justify-start">
             <span className="text-[9px] font-semibold text-muted">
               <span className="md:hidden">F</span>
-              <span className="hidden md:inline">File types</span>
+              <span className="hidden md:inline">File roles</span>
             </span>
           </div>
           <div className="hidden py-1.5 md:block">
             {categories.map((category) => (
               <button
-                aria-pressed={activeCategory === category.extension}
+                aria-pressed={activeRole === category.role}
                 className={`grid w-full grid-cols-[8px_1fr_auto] items-center gap-2 border-l-2 px-2.5 py-1.5 text-left text-[10px] focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-accent ${
-                  activeCategory === category.extension
+                  activeRole === category.role
                     ? "border-l-accent bg-surface-muted font-semibold text-foreground"
-                    : activeCategory === null
+                    : activeRole === null
                       ? "border-l-transparent hover:bg-surface-muted"
                       : "border-l-transparent text-muted hover:bg-surface-muted hover:text-foreground"
                 }`}
-                key={category.extension}
+                key={category.role}
                 onClick={() =>
-                  setActiveCategory((current) =>
-                    current === category.extension ? null : category.extension,
+                  setActiveRole((current) =>
+                    current === category.role ? null : category.role,
                   )
                 }
                 type="button"
@@ -272,7 +277,7 @@ function Canvas({
                   className="size-2"
                   style={{ backgroundColor: category.color }}
                 />
-                <span>{category.extension}</span>
+                <span>{category.label}</span>
                 <span className="tabular-nums text-muted">{category.count}</span>
               </button>
             ))}
@@ -280,18 +285,18 @@ function Canvas({
           <div className="flex flex-col items-center gap-2 py-3 md:hidden">
             {categories.map((category) => (
               <button
-                aria-label={`${category.extension}: ${category.count} files`}
-                aria-pressed={activeCategory === category.extension}
+                aria-label={`${category.label}: ${category.count} files`}
+                aria-pressed={activeRole === category.role}
                 className={`size-5 border focus-visible:outline-2 focus-visible:outline-accent ${
-                  activeCategory === category.extension ? "border-foreground" : "border-transparent"
+                  activeRole === category.role ? "border-foreground" : "border-transparent"
                 }`}
-                key={category.extension}
+                key={category.role}
                 onClick={() =>
-                  setActiveCategory((current) =>
-                    current === category.extension ? null : category.extension,
+                  setActiveRole((current) =>
+                    current === category.role ? null : category.role,
                   )
                 }
-                title={`${category.extension}: ${category.count}`}
+                title={`${category.label}: ${category.count}`}
                 type="button"
               >
                 <span className="mx-auto block size-2" style={{ backgroundColor: category.color }} />
@@ -313,9 +318,10 @@ function Canvas({
             fitView
             fitViewOptions={{ padding: 0.12, maxZoom: 0.9 }}
             proOptions={{ hideAttribution: true }}
-            onNodeClick={(_, node) => {
-              if (expandedIds.has(node.id)) return;
-              setSelection({ kind: "node", id: node.id });
+             onNodeClick={(_, node) => {
+               if (expandedIds.has(node.id)) return;
+               setHovered(null);
+               setSelection({ kind: "node", id: node.id });
               setExpandedIds((current) => new Set(current).add(node.id));
               setRefitVersion((version) => version + 1);
             }}
@@ -323,7 +329,10 @@ function Canvas({
               setHovered({ kind: "node", id: node.id })
             }
             onNodeMouseLeave={() => setHovered(null)}
-            onPaneClick={() => setSelection(null)}
+            onPaneClick={() => {
+              setHovered(null);
+              setSelection(null);
+            }}
           >
             <Background
               variant={BackgroundVariant.Dots}
@@ -337,8 +346,15 @@ function Canvas({
               className="!overflow-hidden !rounded-none !border !border-border !bg-surface !shadow-none [&_button]:!border-border [&_button]:!bg-surface [&_button]:!fill-foreground"
             />
           </ReactFlow>
-          <div className="pointer-events-none absolute left-3 top-3 border border-border bg-surface/95 px-2 py-1 text-[9px] text-muted">
-            Open a module to inspect its files
+          <div className="pointer-events-none absolute left-3 top-3 flex items-center gap-3 border border-border bg-surface/95 px-2 py-1 font-mono text-[9px] text-muted">
+            <span className="flex items-center gap-1.5">
+              <span className="size-1.5 bg-imports" />
+              Imports →
+            </span>
+            <span className="flex items-center gap-1.5">
+              <span className="size-1.5 bg-imported-by" />
+              ← Imported by
+            </span>
           </div>
         </main>
 
@@ -353,7 +369,7 @@ function Canvas({
             hovered={hovered}
             insights={insights}
             repositoryName={repositoryName}
-            routeCount={routeCount}
+            routes={routes}
             selection={selection}
             unidentifiedFileCount={unidentifiedFileCount}
             onHover={setHovered}
@@ -373,7 +389,7 @@ function DetailPane({
   hovered,
   insights,
   repositoryName,
-  routeCount,
+  routes,
   selection,
   unidentifiedFileCount,
   onHover,
@@ -386,7 +402,7 @@ function DetailPane({
   hovered: Exclude<Selection, null> | null;
   insights: GraphInsights;
   repositoryName: string;
-  routeCount: number;
+  routes: Route[];
   selection: Selection;
   unidentifiedFileCount: number;
   onHover: (target: Exclude<Selection, null> | null) => void;
@@ -451,7 +467,7 @@ function DetailPane({
             graph={graph}
             hovered={hovered}
             repositoryName={repositoryName}
-            routeCount={routeCount}
+            routes={routes}
             unidentifiedFileCount={unidentifiedFileCount}
             onHover={onHover}
             onSelectFile={onSelectFile}
@@ -476,7 +492,7 @@ function RepositoryDetails({
   graph,
   hovered,
   repositoryName,
-  routeCount,
+  routes,
   unidentifiedFileCount,
   onHover,
   onSelectFile,
@@ -485,7 +501,7 @@ function RepositoryDetails({
   graph: FoldedGraph;
   hovered: Exclude<Selection, null> | null;
   repositoryName: string;
-  routeCount: number;
+  routes: Route[];
   unidentifiedFileCount: number;
   onHover: (target: Exclude<Selection, null> | null) => void;
   onSelectFile: (path: string) => void;
@@ -511,8 +527,15 @@ function RepositoryDetails({
       <div className="grid grid-cols-3 border-b border-border">
         <Metric label="Files" value={files.length} />
         <Metric label="Imports" value={graph.edges.length} />
-        <Metric label="Routes" value={routeCount} />
+        <Metric label="Routes" value={routes.length} />
       </div>
+      <RouteTable
+        graph={graph}
+        hovered={hovered}
+        routes={routes}
+        onHover={onHover}
+        onSelectFile={onSelectFile}
+      />
       <DetailSection title="Most depended on">
         {mostDependedOn.map((file) => (
           <PathButton
@@ -546,6 +569,67 @@ function RepositoryDetails({
         <span className="font-mono font-semibold tabular-nums">{unidentifiedFileCount}</span>
       </div>
     </div>
+  );
+}
+
+function RouteTable({
+  graph,
+  hovered,
+  routes,
+  onHover,
+  onSelectFile,
+}: {
+  graph: FoldedGraph;
+  hovered: Exclude<Selection, null> | null;
+  routes: Route[];
+  onHover: (target: Exclude<Selection, null> | null) => void;
+  onSelectFile: (path: string) => void;
+}) {
+  return (
+    <DetailSection title={`Routes (${routes.length})`}>
+      {routes.length === 0 ? (
+        <EmptyList>No exact routes found.</EmptyList>
+      ) : (
+        <table className="w-full table-fixed border-collapse text-left font-mono text-[9px]">
+          <thead className="text-muted">
+            <tr className="border-b border-border">
+              <th className="w-14 px-3 py-1.5 font-medium">Method</th>
+              <th className="px-2 py-1.5 font-medium">Path</th>
+            </tr>
+          </thead>
+          <tbody>
+            {routes.map((route) => {
+              const highlighted =
+                hovered?.kind === "file"
+                  ? hovered.path === route.filePath
+                  : hovered?.kind === "node" &&
+                    graph.fileToNode[route.filePath] === hovered.id;
+              return (
+                <tr className="border-b border-border last:border-b-0" key={`${route.method}:${route.path}:${route.filePath}`}>
+                  <td className="px-3 py-2 align-top font-semibold text-accent">
+                    {route.method}
+                  </td>
+                  <td className="p-0">
+                    <button
+                      className={`block w-full break-all px-2 py-2 text-left focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-accent ${
+                        highlighted ? "bg-surface-muted" : "hover:bg-surface-muted"
+                      }`}
+                      onClick={() => onSelectFile(route.filePath)}
+                      onMouseEnter={() => onHover({ kind: "file", path: route.filePath })}
+                      onMouseLeave={() => onHover(null)}
+                      title={route.filePath}
+                      type="button"
+                    >
+                      {route.path}
+                    </button>
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      )}
+    </DetailSection>
   );
 }
 
@@ -678,8 +762,8 @@ function WalkButton({
       className={`bg-surface px-2 py-2 text-left text-[9px] font-semibold focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-accent ${
         active
           ? direction === "incoming"
-            ? "text-incoming shadow-[inset_0_2px_0_var(--incoming)]"
-            : "text-outgoing shadow-[inset_0_2px_0_var(--outgoing)]"
+            ? "text-imported-by shadow-[inset_0_2px_0_var(--imported-by)]"
+            : "text-imports shadow-[inset_0_2px_0_var(--imports)]"
           : "text-muted hover:bg-surface-muted hover:text-foreground"
       }`}
       onClick={onClick}
@@ -927,16 +1011,16 @@ function ModuleNode({ data, selected }: NodeProps<ModuleFlowNode>) {
     dimmed,
     selectedFile,
     hoveredFile,
-    activeCategory,
-    fileTypeColors,
+    activeRole,
+    roleColors,
     onClose,
     onHoverFile,
     onHoverNode,
     onSelectFile,
   } = data;
   const updateNodeInternals = useUpdateNodeInternals();
-  const categoryMatchCount = activeCategory
-    ? folderNode.files.filter((file) => fileExtension(file.path) === activeCategory).length
+  const categoryMatchCount = activeRole
+    ? folderNode.files.filter((file) => file.role === activeRole).length
     : null;
 
   if (!expanded) {
@@ -948,7 +1032,7 @@ function ModuleNode({ data, selected }: NodeProps<ModuleFlowNode>) {
           dimmed ? "opacity-15" : "opacity-100"
         }`}
       >
-        <Handle type="target" position={Position.Left} className="!size-1.5 !border-0 !bg-incoming" />
+        <Handle type="target" position={Position.Left} className="!size-1.5 !border-0 !bg-imported-by" />
         <div className="min-w-0">
           <p className="truncate text-[11px] font-semibold">{folderNode.label}</p>
           <p className="mt-0.5 text-[9px] text-muted">
@@ -959,21 +1043,21 @@ function ModuleNode({ data, selected }: NodeProps<ModuleFlowNode>) {
         </div>
         <div className="flex items-center justify-between text-[8px] tabular-nums">
           <span
-            className="text-incoming"
-            aria-label={`${folderNode.fanIn} incoming dependencies`}
-            title={`${folderNode.fanIn} incoming dependencies`}
+            className="text-imported-by"
+            aria-label={`Imported by ${folderNode.fanIn}`}
+            title={`Imported by ${folderNode.fanIn}`}
           >
             ← {folderNode.fanIn}
           </span>
           <span
-            className="text-outgoing"
-            aria-label={`${folderNode.fanOut} outgoing dependencies`}
-            title={`${folderNode.fanOut} outgoing dependencies`}
+            className="text-imports"
+            aria-label={`Imports ${folderNode.fanOut}`}
+            title={`Imports ${folderNode.fanOut}`}
           >
             {folderNode.fanOut} →
           </span>
         </div>
-        <Handle type="source" position={Position.Right} className="!size-1.5 !border-0 !bg-outgoing" />
+        <Handle type="source" position={Position.Right} className="!size-1.5 !border-0 !bg-imports" />
       </div>
     );
   }
@@ -990,7 +1074,7 @@ function ModuleNode({ data, selected }: NodeProps<ModuleFlowNode>) {
         id="node-in"
         type="target"
         position={Position.Left}
-        className="!top-6 !size-1.5 !border-0 !bg-incoming"
+        className="!top-6 !size-1.5 !border-0 !bg-imported-by"
       />
       <button
         type="button"
@@ -1010,16 +1094,16 @@ function ModuleNode({ data, selected }: NodeProps<ModuleFlowNode>) {
         </span>
         <span className="flex shrink-0 gap-2 text-[8px] tabular-nums">
           <span
-            className="text-incoming"
-            aria-label={`${folderNode.fanIn} incoming dependencies`}
-            title={`${folderNode.fanIn} incoming dependencies`}
+            className="text-imported-by"
+            aria-label={`Imported by ${folderNode.fanIn}`}
+            title={`Imported by ${folderNode.fanIn}`}
           >
             ← {folderNode.fanIn}
           </span>
           <span
-            className="text-outgoing"
-            aria-label={`${folderNode.fanOut} outgoing dependencies`}
-            title={`${folderNode.fanOut} outgoing dependencies`}
+            className="text-imports"
+            aria-label={`Imports ${folderNode.fanOut}`}
+            title={`Imports ${folderNode.fanOut}`}
           >
             {folderNode.fanOut} →
           </span>
@@ -1029,7 +1113,7 @@ function ModuleNode({ data, selected }: NodeProps<ModuleFlowNode>) {
         id="node-out"
         type="source"
         position={Position.Right}
-        className="!top-6 !size-1.5 !border-0 !bg-outgoing"
+        className="!top-6 !size-1.5 !border-0 !bg-imports"
       />
 
       <div
@@ -1039,12 +1123,12 @@ function ModuleNode({ data, selected }: NodeProps<ModuleFlowNode>) {
         {folderNode.files.map((file) => (
           <FileRow
             file={file}
-            color={fileTypeColors[fileExtension(file.path)] ?? "var(--muted)"}
+            color={roleColors[file.role] ?? "var(--muted)"}
             key={file.path}
             selected={selectedFile === file.path}
             hovered={hoveredFile === file.path}
             dimmed={
-              activeCategory !== null && fileExtension(file.path) !== activeCategory
+              activeRole !== null && file.role !== activeRole
             }
             onHover={() => onHoverFile(file.path)}
             onLeave={() => onHoverNode(folderNode.id)}
@@ -1086,7 +1170,7 @@ function FileRow({
         id={`in:${file.path}`}
         type="target"
         position={Position.Left}
-        className="!size-1 !border-0 !bg-incoming"
+        className="!size-1 !border-0 !bg-imported-by"
       />
       <button
         type="button"
@@ -1114,14 +1198,14 @@ function FileRow({
         <span className="size-1.5 shrink-0" style={{ backgroundColor: color }} />
         <span className="min-w-0 flex-1 truncate">{name}</span>
         <span
-          className={selected ? "text-background/70" : "text-incoming"}
-          title={`${file.fanIn} incoming dependencies`}
+          className={selected ? "text-background/70" : "text-imported-by"}
+          title={`Imported by ${file.fanIn}`}
         >
           ← {file.fanIn}
         </span>
         <span
-          className={selected ? "text-background/70" : "text-outgoing"}
-          title={`${file.fanOut} outgoing dependencies`}
+          className={selected ? "text-background/70" : "text-imports"}
+          title={`Imports ${file.fanOut}`}
         >
           {file.fanOut} →
         </span>
@@ -1130,16 +1214,10 @@ function FileRow({
         id={`out:${file.path}`}
         type="source"
         position={Position.Right}
-        className="!size-1 !border-0 !bg-outgoing"
+        className="!size-1 !border-0 !bg-imports"
       />
     </div>
   );
-}
-
-function fileExtension(filePath: string): string {
-  const name = fileName(filePath);
-  const dot = name.lastIndexOf(".");
-  return dot > 0 ? name.slice(dot + 1) : "other";
 }
 
 function fileName(filePath: string): string {
@@ -1286,11 +1364,12 @@ function getActiveElements(
   return { nodeIds, edgeIds, edgeDirections };
 }
 
-function edgeMatchesCategory(
+function edgeMatchesRole(
+  graph: FoldedGraph,
   edge: DependencyFlowEdge,
-  category: string,
+  role: string,
 ): boolean {
   return [...(edge.data?.sourcePaths ?? []), ...(edge.data?.targetPaths ?? [])].some(
-    (path) => fileExtension(path) === category,
+    (path) => findFile(graph, path)?.role === role,
   );
 }

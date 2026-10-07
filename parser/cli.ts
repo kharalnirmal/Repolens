@@ -16,11 +16,23 @@ async function main(): Promise<void> {
   const folders = new Set(result.files.map((file) => file.folder));
 
   console.log(`Repository: ${result.repository.root}`);
+  console.log(`Framework: ${result.adapter.framework ?? "not detected"}`);
   console.log(`Files found: ${coverage.filesFound}`);
   console.log(`Files parsed: ${coverage.filesParsed}`);
   console.log(`Files skipped: ${coverage.filesSkipped}`);
   console.log(`Distinct folders: ${folders.size}`);
   console.log(`Edges: ${result.edges.length}`);
+  console.log(`Routes: ${result.routes.length}`);
+  const roleCounts = new Map<string, number>();
+  for (const fileRole of result.fileRoles) {
+    roleCounts.set(fileRole.role, (roleCounts.get(fileRole.role) ?? 0) + 1);
+  }
+  console.log(
+    `Roles: ${[...roleCounts.entries()]
+      .toSorted((left, right) => left[0].localeCompare(right[0]))
+      .map(([role, count]) => `${role} ${count}`)
+      .join(", ")}`,
+  );
   console.log(
     `Imports: ${coverage.importsFound} found, ${coverage.importsResolved} resolved, ${coverage.importsExternal} external, ${coverage.importsExcluded} excluded, ${coverage.importsUnresolved} unresolved`,
   );

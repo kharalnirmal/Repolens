@@ -10,10 +10,12 @@ import {
   type SourceFile,
 } from "ts-morph";
 
-import { fallbackAdapter } from "./adapter.ts";
+import { genericRole, selectAdapter } from "./adapter.ts";
 import { calculateFanCounts } from "./graph.ts";
 import type {
   DependencyEdge,
+  ExtractedRoute,
+  FileRole,
   ImportKind,
   ImportResolution,
   ModuleKind,
@@ -27,6 +29,8 @@ export type {
   AdapterContext,
   CoverageReport,
   DependencyEdge,
+  ExtractedRoute,
+  FileRole,
   ImportKind,
   ImportResolution,
   ImportResolutionStatus,
@@ -149,8 +153,23 @@ export async function parseRepository(
     file.fanOut = counts.fanOut;
   }
 
-  const adapter = options.adapter ?? fallbackAdapter;
-  const framework = adapter.detect({ root, files });
+  const context = {
+    root,
+    files,
+    packageNames: await readPackageNames(root),
+  };
+  const adapter = options.adapter ?? selectAdapter(context);
+  const framework = adapter.detect(context);
+  const fileRoles: FileRole[] = files.map((file) => {
+    const role = adapter.roleFor(file);
+    return {
+      filePath: file.path,
+      role: role ?? genericRole(file),
+      source:
+        adapter.framework === null || role === null ? "fallback" : "convention",
+    };
+  });
+  const routes = deduplicateRoutes(adapter.extractRoutes(context));
   const reExports = resolutions.filter(
     (resolution) => resolution.kind === "re-export",
   );
@@ -167,6 +186,8 @@ export async function parseRepository(
     },
     files,
     edges,
+    fileRoles,
+    routes,
     coverage: {
       filesFound: files.length + walked.skippedFiles.length,
       filesParsed: files.length,
@@ -183,6 +204,44 @@ export async function parseRepository(
       imports: resolutions,
     },
   };
+}
+
+async function readPackageNames(root: string): Promise<ReadonlySet<string>> {
+  const packagePath = path.join(root, "package.json");
+  const content = await fs.readFile(packagePath, "utf8").catch(() => null);
+  if (content === null) return new Set();
+
+  try {
+    const manifest: unknown = JSON.parse(content);
+    if (!manifest || typeof manifest !== "object" || Array.isArray(manifest)) {
+      return new Set();
+    }
+    const record = manifest as Record<string, unknown>;
+    const names = new Set<string>();
+    for (const field of ["dependencies", "devDependencies", "peerDependencies"]) {
+      const dependencies = record[field];
+      if (!dependencies || typeof dependencies !== "object" || Array.isArray(dependencies)) {
+        continue;
+      }
+      for (const name of Object.keys(dependencies)) names.add(name);
+    }
+    return names;
+  } catch {
+    return new Set();
+  }
+}
+
+function deduplicateRoutes(routes: readonly ExtractedRoute[]): ExtractedRoute[] {
+  const unique = new Map<string, ExtractedRoute>();
+  for (const route of routes) {
+    unique.set([route.filePath, route.method, route.path].join("\0"), route);
+  }
+  return [...unique.values()].toSorted(
+    (left, right) =>
+      left.path.localeCompare(right.path) ||
+      left.method.localeCompare(right.method) ||
+      left.filePath.localeCompare(right.filePath),
+  );
 }
 
 function createProject(root: string): Project {

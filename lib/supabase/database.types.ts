@@ -110,8 +110,10 @@ export type Database = {
           p_commit_sha: string;
           p_coverage: Json;
           p_edges: Json;
+          p_file_roles: Json;
           p_files: Json;
           p_framework: string | null;
+          p_routes: Json;
         };
         Returns: undefined;
       };

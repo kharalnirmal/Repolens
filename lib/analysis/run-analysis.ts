@@ -76,6 +76,20 @@ export async function runAnalysis(
             specifier: edge.specifier,
           })),
         ),
+        p_file_roles: toJson(
+          result.fileRoles.map((fileRole) => ({
+            file_path: fileRole.filePath,
+            role: fileRole.role,
+            source: fileRole.source,
+          })),
+        ),
+        p_routes: toJson(
+          result.routes.map((route) => ({
+            file_path: route.filePath,
+            method: route.method,
+            path: route.path,
+          })),
+        ),
       });
       if (error) throw error;
     });
@@ -139,5 +153,14 @@ function toJson(value: unknown): Json {
 }
 
 function errorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
+  if (error instanceof Error) return error.message;
+  if (
+    error !== null &&
+    typeof error === "object" &&
+    "message" in error &&
+    typeof error.message === "string"
+  ) {
+    return error.message;
+  }
+  return String(error);
 }

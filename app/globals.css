@@ -8,8 +8,8 @@
   --foreground: #17211b;
   --muted: #68736b;
   --accent: #315be8;
-  --incoming: #14765a;
-  --outgoing: #b65d2e;
+  --imported-by: #b65d2e;
+  --imports: #14765a;
   --scrollbar-thumb: #8f9a91;
   --scrollbar-thumb-hover: #68736b;
   --file-kind-1: #6d46c7;
@@ -29,8 +29,8 @@
   --color-foreground: var(--foreground);
   --color-muted: var(--muted);
   --color-accent: var(--accent);
-  --color-incoming: var(--incoming);
-  --color-outgoing: var(--outgoing);
+  --color-imported-by: var(--imported-by);
+  --color-imports: var(--imports);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
 }
@@ -43,8 +43,8 @@
   --foreground: #edf2ed;
   --muted: #9ca9a0;
   --accent: #7d9cff;
-  --incoming: #56c49a;
-  --outgoing: #e39568;
+  --imported-by: #e39568;
+  --imports: #56c49a;
   --scrollbar-thumb: #526158;
   --scrollbar-thumb-hover: #718078;
   --file-kind-1: #b39aef;
@@ -65,8 +65,8 @@
     --foreground: #edf2ed;
     --muted: #9ca9a0;
     --accent: #7d9cff;
-    --incoming: #56c49a;
-    --outgoing: #e39568;
+    --imported-by: #e39568;
+    --imports: #56c49a;
     --scrollbar-thumb: #526158;
     --scrollbar-thumb-hover: #718078;
     --file-kind-1: #b39aef;

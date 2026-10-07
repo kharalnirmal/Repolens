@@ -4,8 +4,8 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 
 import { calculateInsights } from "@/lib/graph/analysis";
 import { foldGraph } from "@/lib/graph/fold";
+import { taxonomyFor } from "@/lib/framework/taxonomy";
 import type { Database, Json } from "@/lib/supabase/database.types";
-import { fallbackAdapter } from "@/parser/adapter";
 import type { DependencyEdge, ImportKind, ModuleKind } from "@/parser/types";
 
 const categoryColors = [
@@ -16,6 +16,17 @@ const categoryColors = [
   "var(--file-kind-5)",
   "var(--file-kind-6)",
 ];
+
+const conventionEntryRoles = new Set([
+  "api",
+  "bootstrap",
+  "config",
+  "controller",
+  "entry",
+  "layout",
+  "middleware",
+  "page",
+]);
 
 export async function loadAnalysisGraph(
   supabase: SupabaseClient<Database>,
@@ -36,6 +47,8 @@ export async function loadAnalysisGraph(
       path: readString(file.path, "file path"),
       lineCount: readNumber(file.line_count, "line count"),
       moduleKind: readModuleKind(file.module_kind),
+      role: readString(file.role, "file role"),
+      roleSource: readRoleSource(file.role_source),
     };
   });
   const edges: DependencyEdge[] = readArray(graphData.edges, "edges").map((value) => {
@@ -63,29 +76,46 @@ export async function loadAnalysisGraph(
   }));
   const conventionEntryPaths = new Set(
     files
-      .filter((file) => fallbackAdapter.isConventionEntry(file.path))
+      .filter((file) => conventionEntryRoles.has(file.role))
       .map((file) => file.path),
   );
   const counts = new Map<string, number>();
   for (const file of files) {
-    const extension = path.posix.extname(file.path).slice(1) || "other";
-    counts.set(extension, (counts.get(extension) ?? 0) + 1);
+    counts.set(file.role, (counts.get(file.role) ?? 0) + 1);
   }
+  const categories = taxonomyFor(framework).map((category, index) => ({
+    role: category.role,
+    label: category.label,
+    count: counts.get(category.role) ?? 0,
+    color: categoryColors[index % categoryColors.length],
+  }));
+  const knownRoles = new Set(categories.map((category) => category.role));
+  for (const [role, count] of counts) {
+    if (knownRoles.has(role)) continue;
+    categories.push({
+      role,
+      label: role,
+      count,
+      color: categoryColors[categories.length % categoryColors.length],
+    });
+  }
+  const routes = readArray(graphData.routes, "routes").map((value) => {
+    const route = readObject(value, "route");
+    return {
+      filePath: readString(route.file_path, "route file path"),
+      method: readString(route.method, "route method"),
+      path: readString(route.path, "route path"),
+    };
+  });
 
   return {
     repositoryName,
     framework,
     graph: foldGraph(files, edges),
     insights: calculateInsights(files, edges, conventionEntryPaths),
-    categories: [...counts.entries()]
-      .toSorted((left, right) => right[1] - left[1] || left[0].localeCompare(right[0]))
-      .map(([extension, count], index) => ({
-        extension,
-        count,
-        color: categoryColors[index % categoryColors.length],
-      })),
-    routeCount: readNumber(graphData.route_count, "route count"),
-    unidentifiedFileCount: framework === null ? files.length : 0,
+    categories,
+    routes,
+    unidentifiedFileCount: files.filter((file) => file.roleSource === "fallback").length,
   };
 }
 
@@ -128,4 +158,9 @@ function readImportKind(value: Json | undefined): ImportKind {
     return value;
   }
   throw new Error("Stored import kind is invalid");
+}
+
+function readRoleSource(value: Json | undefined): "convention" | "fallback" {
+  if (value === "convention" || value === "fallback") return value;
+  throw new Error("Stored file role source is invalid");
 }

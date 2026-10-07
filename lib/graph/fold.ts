@@ -5,7 +5,7 @@ import type { DependencyEdge, ParsedFile } from "@/parser/types";
 export type CanvasFile = Pick<
   ParsedFile,
   "path" | "folder" | "lineCount" | "moduleKind" | "fanIn" | "fanOut"
->;
+> & { role: string };
 
 export interface FoldedNode {
   id: string;
