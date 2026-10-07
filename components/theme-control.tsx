@@ -10,6 +10,7 @@ function isTheme(value: string | null): value is Theme {
   return value === "system" || value === "light" || value === "dark";
 }
 
+/** Restore the saved theme selection and persist changes to the document and local storage. */
 export function ThemeControl() {
   const selectRef = useRef<HTMLSelectElement>(null);
 
