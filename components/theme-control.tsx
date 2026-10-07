@@ -10,6 +10,7 @@ function isTheme(value: string | null): value is Theme {
   return value === "system" || value === "light" || value === "dark";
 }
 
+/** Restore the saved theme selection and persist changes to the document and local storage. */
 export function ThemeControl() {
   const selectRef = useRef<HTMLSelectElement>(null);
 
@@ -33,7 +34,7 @@ export function ThemeControl() {
         defaultValue="system"
         aria-label="Theme"
         onChange={(event) => setTheme(event.target.value as Theme)}
-        className="h-7 border border-border bg-surface-muted px-2 font-mono text-[10px] text-foreground outline-none focus:border-accent"
+        className="h-7 border border-border bg-surface-muted px-2 text-[10px] text-foreground outline-none focus:border-accent"
       >
         <option value="system">System</option>
         <option value="light">Light</option>

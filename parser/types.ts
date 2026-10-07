@@ -1,4 +1,9 @@
-export const importKinds = ["import", "re-export", "dynamic-import"] as const;
+export const importKinds = [
+  "import",
+  "re-export",
+  "dynamic-import",
+  "require",
+] as const;
 
 export type ImportKind = (typeof importKinds)[number];
 export type ModuleKind = "esm" | "commonjs" | "script";
@@ -69,15 +74,40 @@ export interface RepositoryParseResult {
   };
   files: ParsedFile[];
   edges: DependencyEdge[];
+  fileRoles: FileRole[];
+  routes: ExtractedRoute[];
   coverage: CoverageReport;
+}
+
+export interface AdapterFile {
+  path: string;
+  content: string;
+  moduleKind: ModuleKind;
+  exports: readonly string[];
 }
 
 export interface AdapterContext {
   root: string;
-  files: ReadonlyArray<Pick<ParsedFile, "path" | "moduleKind">>;
+  files: readonly AdapterFile[];
+  packageNames: ReadonlySet<string>;
+}
+
+export interface FileRole {
+  filePath: string;
+  role: string;
+  source: "convention" | "fallback";
+}
+
+export interface ExtractedRoute {
+  filePath: string;
+  method: string;
+  path: string;
 }
 
 export interface ParserAdapter {
   readonly name: string;
+  readonly framework: string | null;
   detect(context: AdapterContext): string | null;
+  roleFor(file: AdapterFile): string | null;
+  extractRoutes(context: AdapterContext): ExtractedRoute[];
 }

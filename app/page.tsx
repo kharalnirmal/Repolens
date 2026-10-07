@@ -1,6 +1,9 @@
 import { OrganizationSwitcher, UserButton } from "@clerk/nextjs";
 import { auth } from "@clerk/nextjs/server";
+import Link from "next/link";
+import { AnalysisRealtimeRefresh } from "@/components/analysis-realtime-refresh";
 import { InviteMemberForm } from "@/components/invite-member-form";
+import { RepositoryForm } from "@/components/repository-form";
 import { ThemeControl } from "@/components/theme-control";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 
@@ -8,6 +11,8 @@ const dateFormatter = new Intl.DateTimeFormat("en", {
   dateStyle: "medium",
   timeStyle: "short",
 });
+
+export const maxDuration = 300;
 
 function statusStyle(status: string) {
   switch (status) {
@@ -68,6 +73,9 @@ export default async function WorkspacePage() {
     { label: "In progress", value: activeCount },
     { label: "Failed", value: failedCount },
   ];
+  const activeAnalysisIds = analyses
+    .filter((analysis) => analysis.status === "queued" || analysis.status === "running")
+    .map((analysis) => analysis.id);
 
   return (
     <div className="flex min-h-screen flex-col bg-background text-foreground">
@@ -96,6 +104,7 @@ export default async function WorkspacePage() {
       </header>
 
       <main className="flex flex-1 flex-col">
+        <AnalysisRealtimeRefresh analysisIds={activeAnalysisIds} />
         <div className="flex h-9 items-center border-b border-border bg-surface-muted px-3 font-mono text-[10px] text-muted sm:px-5">
           <span>workspace</span>
           <svg
@@ -123,6 +132,10 @@ export default async function WorkspacePage() {
             <span className="hidden font-mono text-[10px] text-muted sm:block">
               latest 50 records
             </span>
+          </div>
+
+          <div className="mb-3">
+            <RepositoryForm />
           </div>
 
           <dl className="mb-3 grid grid-cols-2 border-l border-t border-border sm:grid-cols-4">
@@ -179,36 +192,41 @@ export default async function WorkspacePage() {
                   return (
                     <li
                       key={analysis.id}
-                      className="group grid gap-3 border-b border-border px-3 py-3.5 last:border-b-0 hover:bg-surface-muted sm:grid-cols-[2.75rem_minmax(0,1fr)_10rem_11rem] sm:items-center sm:gap-0 sm:p-0"
+                      className="group border-b border-border last:border-b-0"
                     >
-                      <span className="hidden self-stretch border-r border-border px-3 py-4 font-mono text-[10px] text-muted sm:block">
-                        {String(index + 1).padStart(2, "0")}
-                      </span>
-                      <div className="min-w-0 sm:px-3 sm:py-3.5">
-                        <p className="truncate font-mono text-[11px] font-semibold">
-                          {analysis.project.repository_name}
-                        </p>
-                        <p className="mt-1.5 truncate font-mono text-[10px] text-muted">
-                          {analysis.project.repository_url}
-                        </p>
-                      </div>
-                      <div className="flex items-center sm:block sm:px-3 sm:py-3.5">
-                        <span className="inline-flex items-center gap-2 font-mono text-[10px]">
-                          <span className={`size-1.5 ${status.dot}`} />
-                          <span className={status.text}>{analysis.status}</span>
-                        </span>
-                        {analysis.stage ? (
-                          <p className="ml-2 truncate font-mono text-[10px] text-muted sm:ml-3.5 sm:mt-1">
-                            {analysis.stage}
-                          </p>
-                        ) : null}
-                      </div>
-                      <time
-                        dateTime={analysis.created_at}
-                        className="font-mono text-[10px] text-muted sm:px-3 sm:py-3.5"
+                      <Link
+                        href={`/analyses/${analysis.id}`}
+                        className="grid gap-3 px-3 py-3.5 outline-none hover:bg-surface-muted focus-visible:bg-surface-muted sm:grid-cols-[2.75rem_minmax(0,1fr)_10rem_11rem] sm:items-center sm:gap-0 sm:p-0"
                       >
-                        {dateFormatter.format(new Date(analysis.created_at))}
-                      </time>
+                        <span className="hidden self-stretch border-r border-border px-3 py-4 font-mono text-[10px] text-muted sm:block">
+                          {String(index + 1).padStart(2, "0")}
+                        </span>
+                        <div className="min-w-0 sm:px-3 sm:py-3.5">
+                          <p className="truncate font-mono text-[11px] font-semibold">
+                            {analysis.project.repository_name}
+                          </p>
+                          <p className="mt-1.5 truncate font-mono text-[10px] text-muted">
+                            {analysis.project.repository_url}
+                          </p>
+                        </div>
+                        <div className="flex items-center sm:block sm:px-3 sm:py-3.5">
+                          <span className="inline-flex items-center gap-2 font-mono text-[10px]">
+                            <span className={`size-1.5 ${status.dot}`} />
+                            <span className={status.text}>{analysis.status}</span>
+                          </span>
+                          {analysis.stage ? (
+                            <p className="ml-2 truncate font-mono text-[10px] text-muted sm:ml-3.5 sm:mt-1">
+                              {analysis.stage}
+                            </p>
+                          ) : null}
+                        </div>
+                        <time
+                          dateTime={analysis.created_at}
+                          className="font-mono text-[10px] text-muted sm:px-3 sm:py-3.5"
+                        >
+                          {dateFormatter.format(new Date(analysis.created_at))}
+                        </time>
+                      </Link>
                     </li>
                   );
                 })}

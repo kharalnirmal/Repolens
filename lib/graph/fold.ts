@@ -5,7 +5,7 @@ import type { DependencyEdge, ParsedFile } from "@/parser/types";
 export type CanvasFile = Pick<
   ParsedFile,
   "path" | "folder" | "lineCount" | "moduleKind" | "fanIn" | "fanOut"
->;
+> & { role: string };
 
 export interface FoldedNode {
   id: string;
@@ -29,16 +29,26 @@ interface DirectoryGroup {
 
 const targetNodeCount = 24;
 
+/**
+ * Fold directory groups into at most 24 canvas nodes while retaining file-level edges.
+ * Raise the merge threshold as needed and count imports between resulting groups.
+ * @throws If an edge endpoint is missing from the supplied files.
+ */
 export function foldGraph(
-  files: readonly ParsedFile[],
+  files: readonly CanvasFile[],
   edges: readonly DependencyEdge[],
 ): FoldedGraph {
-  const canvasFiles = files.map(toCanvasFile);
+  const canvasFiles = [...files];
   let threshold = 2;
   let groups = foldAtThreshold(canvasFiles, threshold);
 
   while (groups.length > targetNodeCount) {
-    threshold += 1;
+    const nextGroupSize = Math.min(
+      ...groups
+        .filter((group) => group.id !== ".")
+        .map((group) => group.files.length),
+    );
+    threshold = nextGroupSize + 1;
     groups = foldAtThreshold(canvasFiles, threshold);
   }
 
@@ -155,17 +165,6 @@ function shortestUniqueLabels(ids: readonly string[]): Map<string, string> {
   }
 
   return labels;
-}
-
-function toCanvasFile(file: ParsedFile): CanvasFile {
-  return {
-    path: file.path,
-    folder: file.folder,
-    lineCount: file.lineCount,
-    moduleKind: file.moduleKind,
-    fanIn: file.fanIn,
-    fanOut: file.fanOut,
-  };
 }
 
 function parentDirectory(directory: string): string {

@@ -10,10 +10,12 @@ import {
   type SourceFile,
 } from "ts-morph";
 
-import { fallbackAdapter } from "./adapter.ts";
+import { genericRole, selectAdapter } from "./adapter.ts";
 import { calculateFanCounts } from "./graph.ts";
 import type {
   DependencyEdge,
+  ExtractedRoute,
+  FileRole,
   ImportKind,
   ImportResolution,
   ModuleKind,
@@ -27,6 +29,8 @@ export type {
   AdapterContext,
   CoverageReport,
   DependencyEdge,
+  ExtractedRoute,
+  FileRole,
   ImportKind,
   ImportResolution,
   ImportResolutionStatus,
@@ -82,6 +86,7 @@ interface WalkResult {
 
 export interface ParseRepositoryOptions {
   adapter?: ParserAdapter;
+  onFilesSelected?: (fileCount: number) => void | Promise<void>;
 }
 
 export async function parseRepository(
@@ -96,6 +101,7 @@ export async function parseRepository(
   }
 
   const walked = await walkRepository(root);
+  await options.onFilesSelected?.(walked.sources.length);
   const project = createProject(root);
   const sourceFilesByPath = new Map<string, SourceFile>();
 
@@ -147,8 +153,23 @@ export async function parseRepository(
     file.fanOut = counts.fanOut;
   }
 
-  const adapter = options.adapter ?? fallbackAdapter;
-  const framework = adapter.detect({ root, files });
+  const context = {
+    root,
+    files,
+    packageNames: await readPackageNames(root),
+  };
+  const adapter = options.adapter ?? selectAdapter(context);
+  const framework = adapter.detect(context);
+  const fileRoles: FileRole[] = files.map((file) => {
+    const role = adapter.roleFor(file);
+    return {
+      filePath: file.path,
+      role: role ?? genericRole(file),
+      source:
+        adapter.framework === null || role === null ? "fallback" : "convention",
+    };
+  });
+  const routes = deduplicateRoutes(adapter.extractRoutes(context));
   const reExports = resolutions.filter(
     (resolution) => resolution.kind === "re-export",
   );
@@ -165,6 +186,8 @@ export async function parseRepository(
     },
     files,
     edges,
+    fileRoles,
+    routes,
     coverage: {
       filesFound: files.length + walked.skippedFiles.length,
       filesParsed: files.length,
@@ -183,9 +206,54 @@ export async function parseRepository(
   };
 }
 
+async function readPackageNames(root: string): Promise<ReadonlySet<string>> {
+  const packagePath = path.join(root, "package.json");
+  const content = await fs.readFile(packagePath, "utf8").catch(() => null);
+  if (content === null) return new Set();
+
+  try {
+    const manifest: unknown = JSON.parse(content);
+    if (!manifest || typeof manifest !== "object" || Array.isArray(manifest)) {
+      return new Set();
+    }
+    const record = manifest as Record<string, unknown>;
+    const names = new Set<string>();
+    for (const field of ["dependencies", "devDependencies", "peerDependencies"]) {
+      const dependencies = record[field];
+      if (!dependencies || typeof dependencies !== "object" || Array.isArray(dependencies)) {
+        continue;
+      }
+      for (const name of Object.keys(dependencies)) names.add(name);
+    }
+    return names;
+  } catch {
+    return new Set();
+  }
+}
+
+function deduplicateRoutes(routes: readonly ExtractedRoute[]): ExtractedRoute[] {
+  const routesByEndpoint = new Map<string, Map<string, ExtractedRoute>>();
+  for (const route of routes) {
+    const endpoint = [route.method, route.path].join("\0");
+    const routesByFile = routesByEndpoint.get(endpoint) ?? new Map();
+    routesByFile.set(route.filePath, route);
+    routesByEndpoint.set(endpoint, routesByFile);
+  }
+
+  return [...routesByEndpoint.values()]
+    .filter((routesByFile) => routesByFile.size === 1)
+    .map((routesByFile) => [...routesByFile.values()][0])
+    .toSorted(
+    (left, right) =>
+      left.path.localeCompare(right.path) ||
+      left.method.localeCompare(right.method) ||
+      left.filePath.localeCompare(right.filePath),
+    );
+}
+
 function createProject(root: string): Project {
   const configPath = ["tsconfig.json", "jsconfig.json"]
-    .map((fileName) => path.join(root, fileName))
+    .map((fileName) => `${root}${path.sep}${fileName}`)
     .find((candidate) => ts.sys.fileExists(candidate));
 
   if (configPath) {
@@ -290,6 +358,10 @@ function addSkippedFile(
 function createParsedFile(source: WalkedSource, sourceFile: SourceFile): ParsedFile {
   const extension = path.extname(source.absolutePath).toLowerCase();
   const folder = path.posix.dirname(source.relativePath);
+  const exports = new Set(
+    sourceFile.getExportSymbols().map((symbol) => symbol.getName()),
+  );
+  for (const name of collectCommonJsExports(sourceFile)) exports.add(name);
 
   return {
     path: source.relativePath,
@@ -301,10 +373,7 @@ function createParsedFile(source: WalkedSource, sourceFile: SourceFile): ParsedF
         ? 0
         : source.content.split(/\r\n|\r|\n/u).length,
     moduleKind: detectModuleKind(sourceFile, extension),
-    exports: sourceFile
-      .getExportSymbols()
-      .map((symbol) => symbol.getName())
-      .sort(),
+    exports: [...exports].sort(),
     fanIn: 0,
     fanOut: 0,
   };
@@ -325,7 +394,16 @@ function detectModuleKind(
       ) ||
     sourceFile
       .getExportAssignments()
-      .some((assignment) => assignment.isExportEquals());
+      .some((assignment) => assignment.isExportEquals()) ||
+    sourceFile
+      .getDescendantsOfKind(SyntaxKind.CallExpression)
+      .some((call) => isRequireCall(call)) ||
+    sourceFile
+      .getDescendantsOfKind(SyntaxKind.BinaryExpression)
+      .some((expression) =>
+        expression.getOperatorToken().getKind() === SyntaxKind.EqualsToken &&
+        isCommonJsExportTarget(expression.getLeft()),
+      );
 
   if (hasCommonJsModuleSyntax) return "commonjs";
   if (
@@ -364,19 +442,122 @@ function collectImports(
 
   sourceFile.forEachDescendant((node) => {
     if (!Node.isCallExpression(node)) return;
-    if (node.getExpression().getKind() !== SyntaxKind.ImportKeyword) return;
-
     const [argument] = node.getArguments();
-    if (
-      argument &&
-      (Node.isStringLiteral(argument) ||
-        Node.isNoSubstitutionTemplateLiteral(argument))
-    ) {
+    if (!argument || !isLiteralString(argument)) return;
+
+    if (node.getExpression().getKind() === SyntaxKind.ImportKeyword) {
       addImport("dynamic-import", argument.getLiteralValue());
+    } else if (isRequireCall(node)) {
+      addImport("require", argument.getLiteralValue());
     }
   });
 
   return imports;
+}
+
+function collectCommonJsExports(sourceFile: SourceFile): string[] {
+  const names = new Set<string>();
+
+  for (const expression of sourceFile.getDescendantsOfKind(
+    SyntaxKind.BinaryExpression,
+  )) {
+    if (expression.getOperatorToken().getKind() !== SyntaxKind.EqualsToken) {
+      continue;
+    }
+
+    const left = expression.getLeft();
+    const memberName = commonJsExportMemberName(left);
+    if (memberName !== null) {
+      names.add(memberName);
+      continue;
+    }
+
+    if (!isModuleExports(left)) continue;
+    const right = expression.getRight();
+    if (!Node.isObjectLiteralExpression(right)) continue;
+
+    for (const property of right.getProperties()) {
+      if (
+        Node.isPropertyAssignment(property) ||
+        Node.isShorthandPropertyAssignment(property) ||
+        Node.isMethodDeclaration(property) ||
+        Node.isGetAccessorDeclaration(property) ||
+        Node.isSetAccessorDeclaration(property)
+      ) {
+        names.add(property.getName());
+      }
+    }
+  }
+
+  for (const call of sourceFile.getDescendantsOfKind(SyntaxKind.CallExpression)) {
+    const expression = call.getExpression();
+    if (!Node.isPropertyAccessExpression(expression)) continue;
+    if (expression.getName() !== "defineProperty") continue;
+    if (expression.getExpression().getText() !== "Object") continue;
+
+    const [target, property] = call.getArguments();
+    if (
+      target &&
+      property &&
+      isCommonJsExportsObject(target) &&
+      isLiteralString(property)
+    ) {
+      names.add(property.getLiteralValue());
+    }
+  }
+
+  return [...names];
+}
+
+function isRequireCall(node: import("ts-morph").CallExpression): boolean {
+  const expression = node.getExpression();
+  return Node.isIdentifier(expression) && expression.getText() === "require";
+}
+
+function isLiteralString(
+  node: import("ts-morph").Node,
+): node is import("ts-morph").StringLiteral | import("ts-morph").NoSubstitutionTemplateLiteral {
+  return Node.isStringLiteral(node) || Node.isNoSubstitutionTemplateLiteral(node);
+}
+
+function isCommonJsExportTarget(node: import("ts-morph").Node): boolean {
+  return isModuleExports(node) || commonJsExportMemberName(node) !== null;
+}
+
+function commonJsExportMemberName(node: import("ts-morph").Node): string | null {
+  if (Node.isPropertyAccessExpression(node)) {
+    return isCommonJsExportsObject(node.getExpression()) ? node.getName() : null;
+  }
+  if (Node.isElementAccessExpression(node)) {
+    const argument = node.getArgumentExpression();
+    return isCommonJsExportsObject(node.getExpression()) && argument && isLiteralString(argument)
+      ? argument.getLiteralValue()
+      : null;
+  }
+  return null;
+}
+
+function isCommonJsExportsObject(node: import("ts-morph").Node): boolean {
+  return (
+    (Node.isIdentifier(node) && node.getText() === "exports") ||
+    isModuleExports(node)
+  );
+}
+
+function isModuleExports(node: import("ts-morph").Node): boolean {
+  if (Node.isPropertyAccessExpression(node)) {
+    return node.getExpression().getText() === "module" && node.getName() === "exports";
+  }
+  if (Node.isElementAccessExpression(node)) {
+    const argument = node.getArgumentExpression();
+    return (
+      node.getExpression().getText() === "module" &&
+      argument !== undefined &&
+      isLiteralString(argument) &&
+      argument.getLiteralValue() === "exports"
+    );
+  }
+  return false;
 }
 
 function resolveImport(

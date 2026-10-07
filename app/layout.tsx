@@ -1,6 +1,7 @@
 import { ClerkProvider } from "@clerk/nextjs";
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
+import Script from "next/script";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -36,9 +37,6 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
       suppressHydrationWarning
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
     >
-      <head>
-        <script dangerouslySetInnerHTML={{ __html: themeScript }} />
-      </head>
       <body className="flex min-h-full flex-col">
         <ClerkProvider
           signInUrl="/sign-in"
@@ -48,6 +46,9 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
         >
           {children}
         </ClerkProvider>
+        <Script id="theme-script" strategy="beforeInteractive">
+          {themeScript}
+        </Script>
       </body>
     </html>
   );

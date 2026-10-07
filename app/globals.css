@@ -1,23 +1,23 @@
 @import "tailwindcss";
 
 :root {
-  --background: #f7f7f6;
-  --surface: #ffffff;
-  --surface-muted: #f0f0ee;
-  --border: #d7d7d3;
-  --foreground: #181817;
-  --muted: #686864;
-  --accent: #2563eb;
-  --incoming: #15803d;
-  --outgoing: #b45309;
-  --scrollbar-thumb: #9b9b95;
-  --scrollbar-thumb-hover: #74746f;
-  --file-kind-1: #7c3aed;
-  --file-kind-2: #0369a1;
-  --file-kind-3: #be185d;
-  --file-kind-4: #0f766e;
-  --file-kind-5: #b91c1c;
-  --file-kind-6: #4f46e5;
+  --background: #f4f6f3;
+  --surface: #fcfdfb;
+  --surface-muted: #e9ede9;
+  --border: #c9d0ca;
+  --foreground: #17211b;
+  --muted: #68736b;
+  --accent: #315be8;
+  --imported-by: #b65d2e;
+  --imports: #14765a;
+  --scrollbar-thumb: #8f9a91;
+  --scrollbar-thumb-hover: #68736b;
+  --file-kind-1: #6d46c7;
+  --file-kind-2: #176aa0;
+  --file-kind-3: #a83f69;
+  --file-kind-4: #14765a;
+  --file-kind-5: #b2483f;
+  --file-kind-6: #315be8;
   color-scheme: light;
 }
 
@@ -29,52 +29,52 @@
   --color-foreground: var(--foreground);
   --color-muted: var(--muted);
   --color-accent: var(--accent);
-  --color-incoming: var(--incoming);
-  --color-outgoing: var(--outgoing);
+  --color-imported-by: var(--imported-by);
+  --color-imports: var(--imports);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
 }
 
 :root[data-theme="dark"] {
-  --background: #0c0c0c;
-  --surface: #131313;
-  --surface-muted: #1a1a1a;
-  --border: #2c2c2a;
-  --foreground: #eeeeec;
-  --muted: #999994;
-  --accent: #60a5fa;
-  --incoming: #4ade80;
-  --outgoing: #fbbf24;
-  --scrollbar-thumb: #555550;
-  --scrollbar-thumb-hover: #73736d;
-  --file-kind-1: #a78bfa;
-  --file-kind-2: #38bdf8;
-  --file-kind-3: #f472b6;
-  --file-kind-4: #2dd4bf;
-  --file-kind-5: #f87171;
-  --file-kind-6: #818cf8;
+  --background: #111816;
+  --surface: #17201c;
+  --surface-muted: #202a25;
+  --border: #3b4941;
+  --foreground: #edf2ed;
+  --muted: #9ca9a0;
+  --accent: #7d9cff;
+  --imported-by: #e39568;
+  --imports: #56c49a;
+  --scrollbar-thumb: #526158;
+  --scrollbar-thumb-hover: #718078;
+  --file-kind-1: #b39aef;
+  --file-kind-2: #72b8df;
+  --file-kind-3: #df8eaf;
+  --file-kind-4: #56c49a;
+  --file-kind-5: #e18178;
+  --file-kind-6: #7d9cff;
   color-scheme: dark;
 }
 
 @media (prefers-color-scheme: dark) {
   :root[data-theme="system"] {
-    --background: #0c0c0c;
-    --surface: #131313;
-    --surface-muted: #1a1a1a;
-    --border: #2c2c2a;
-    --foreground: #eeeeec;
-    --muted: #999994;
-    --accent: #60a5fa;
-    --incoming: #4ade80;
-    --outgoing: #fbbf24;
-    --scrollbar-thumb: #555550;
-    --scrollbar-thumb-hover: #73736d;
-    --file-kind-1: #a78bfa;
-    --file-kind-2: #38bdf8;
-    --file-kind-3: #f472b6;
-    --file-kind-4: #2dd4bf;
-    --file-kind-5: #f87171;
-    --file-kind-6: #818cf8;
+    --background: #111816;
+    --surface: #17201c;
+    --surface-muted: #202a25;
+    --border: #3b4941;
+    --foreground: #edf2ed;
+    --muted: #9ca9a0;
+    --accent: #7d9cff;
+    --imported-by: #e39568;
+    --imports: #56c49a;
+    --scrollbar-thumb: #526158;
+    --scrollbar-thumb-hover: #718078;
+    --file-kind-1: #b39aef;
+    --file-kind-2: #72b8df;
+    --file-kind-3: #df8eaf;
+    --file-kind-4: #56c49a;
+    --file-kind-5: #e18178;
+    --file-kind-6: #7d9cff;
     color-scheme: dark;
   }
 }
