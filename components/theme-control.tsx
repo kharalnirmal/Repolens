@@ -33,7 +33,7 @@ export function ThemeControl() {
         defaultValue="system"
         aria-label="Theme"
         onChange={(event) => setTheme(event.target.value as Theme)}
-        className="h-7 rounded border border-border bg-surface-muted px-2 text-xs text-foreground outline-none focus:border-accent"
+        className="h-7 border border-border bg-surface-muted px-2 font-mono text-[10px] text-foreground outline-none focus:border-accent"
       >
         <option value="system">System</option>
         <option value="light">Light</option>
