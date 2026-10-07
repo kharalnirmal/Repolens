@@ -14,12 +14,15 @@ import {
   useUpdateNodeInternals,
   type Edge,
   type Node,
+  type NodeMouseHandler,
   type NodeProps,
 } from "@xyflow/react";
 import { Graph, layout } from "@dagrejs/dagre";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState, useTransition } from "react";
 
+import { requestExplanation, rerunAnalysis } from "@/app/actions";
 import { ThemeControl } from "@/components/theme-control";
+import type { ExplanationResult, ExplanationTarget } from "@/lib/ai/explain";
 import {
   insightSentences,
   walkDependencies,
@@ -42,6 +45,7 @@ interface Route {
 }
 
 interface AnalysisCanvasProps {
+  analysisId: string;
   repositoryName: string;
   framework: string | null;
   graph: FoldedGraph;
@@ -49,6 +53,7 @@ interface AnalysisCanvasProps {
   categories: Category[];
   routes: Route[];
   unidentifiedFileCount: number;
+  tracingConfigured: boolean;
 }
 
 type Selection =
@@ -95,6 +100,7 @@ export function AnalysisCanvas(props: AnalysisCanvasProps) {
 
 /** Coordinate graph selection, category dimming, layout, and the detail pane. */
 function Canvas({
+  analysisId,
   repositoryName,
   framework,
   graph,
@@ -102,6 +108,7 @@ function Canvas({
   categories,
   routes,
   unidentifiedFileCount,
+  tracingConfigured,
 }: AnalysisCanvasProps) {
   const [expandedIds, setExpandedIds] = useState<Set<string>>(() => new Set());
   const [selection, setSelection] = useState<Selection>(null);
@@ -109,9 +116,10 @@ function Canvas({
   const [detailTab, setDetailTab] = useState<DetailTab>("structure");
   const [activeRole, setActiveRole] = useState<string | null>(null);
   const [refitVersion, setRefitVersion] = useState(0);
+  const [explanations, setExplanations] = useState<Record<string, ExplanationResult>>({});
   const { fitView, getZoom } = useReactFlow<ModuleFlowNode, DependencyFlowEdge>();
 
-  const closeNode = (id: string): void => {
+  const closeNode = useCallback((id: string): void => {
     setExpandedIds((current) => {
       const next = new Set(current);
       next.delete(id);
@@ -122,9 +130,9 @@ function Canvas({
         ? { kind: "node", id }
         : current,
     );
-  };
+  }, [graph.fileToNode]);
 
-  const selectFile = (filePath: string): void => {
+  const selectFile = useCallback((filePath: string): void => {
     const nodeId = graph.fileToNode[filePath];
     if (!expandedIds.has(nodeId)) {
       setExpandedIds((current) => new Set(current).add(nodeId));
@@ -132,84 +140,143 @@ function Canvas({
     }
     setHovered(null);
     setSelection({ kind: "file", path: filePath });
-  };
+  }, [expandedIds, graph.fileToNode]);
 
-  const visualEdges = createVisualEdges(graph, expandedIds);
-  const active = getActiveElements(graph, visualEdges, selection);
-  const roleColors = Object.fromEntries(
-    categories.map((category) => [category.role, category.color]),
+  const hoverFile = useCallback((path: string | null): void => {
+    setHovered(path === null ? null : { kind: "file", path });
+  }, []);
+  const hoverNode = useCallback((id: string | null): void => {
+    setHovered(id === null ? null : { kind: "node", id });
+  }, []);
+
+  const visualEdges = useMemo(
+    () => createVisualEdges(graph, expandedIds),
+    [expandedIds, graph],
   );
-  const dimensions = new Map(
-    graph.nodes.map((node) => [node.id, nodeDimensions(node, expandedIds.has(node.id))]),
+  const active = useMemo(
+    () => getActiveElements(graph, visualEdges, selection),
+    [graph, selection, visualEdges],
   );
-  const positions = layoutNodes(graph.nodes, visualEdges, dimensions);
+  const roleColors = useMemo(
+    () => Object.fromEntries(
+      categories.map((category) => [category.role, category.color]),
+    ),
+    [categories],
+  );
+  const dimensions = useMemo(
+    () => new Map(
+      graph.nodes.map((node) => [node.id, nodeDimensions(node, expandedIds.has(node.id))]),
+    ),
+    [expandedIds, graph.nodes],
+  );
+  const positions = useMemo(
+    () => layoutNodes(graph.nodes, visualEdges, dimensions),
+    [dimensions, graph.nodes, visualEdges],
+  );
 
-  const nodes: ModuleFlowNode[] = graph.nodes.map((folderNode) => {
-    const expanded = expandedIds.has(folderNode.id);
-    const size = dimensions.get(folderNode.id)!;
-    return {
-      id: folderNode.id,
-      type: "module",
-      position: positions.get(folderNode.id)!,
-      data: {
-        folderNode,
-        expanded,
-        dimmed:
-          activeRole !== null
-            ? !folderNode.files.some((file) => file.role === activeRole)
-            : selection !== null && !active.nodeIds.has(folderNode.id),
-        selectedFile:
-          selection?.kind === "file" ? selection.path : null,
-        hoveredFile: hovered?.kind === "file" ? hovered.path : null,
-        activeRole,
-        roleColors,
-        onClose: closeNode,
-        onHoverFile: (path) =>
-          setHovered(path === null ? null : { kind: "file", path }),
-        onHoverNode: (id) =>
-          setHovered(id === null ? null : { kind: "node", id }),
-        onSelectFile: selectFile,
-      },
-      style: { width: size.width, height: size.height },
-      draggable: false,
-      selectable: true,
-      selected: selection?.kind === "node" && selection.id === folderNode.id,
-      ariaLabel: `${folderNode.label}, ${folderNode.files.length} files, imported by ${folderNode.fanIn}, imports ${folderNode.fanOut}`,
-    };
-  });
+  const baseNodes = useMemo<ModuleFlowNode[]>(
+    () => graph.nodes.map((folderNode) => {
+      const expanded = expandedIds.has(folderNode.id);
+      const size = dimensions.get(folderNode.id)!;
+      return {
+        id: folderNode.id,
+        type: "module",
+        position: positions.get(folderNode.id)!,
+        data: {
+          folderNode,
+          expanded,
+          dimmed:
+            activeRole !== null
+              ? !folderNode.files.some((file) => file.role === activeRole)
+              : selection !== null && !active.nodeIds.has(folderNode.id),
+          selectedFile:
+            selection?.kind === "file" ? selection.path : null,
+          hoveredFile: null,
+          activeRole,
+          roleColors,
+          onClose: closeNode,
+          onHoverFile: hoverFile,
+          onHoverNode: hoverNode,
+          onSelectFile: selectFile,
+        },
+        style: { width: size.width, height: size.height },
+        draggable: false,
+        selectable: true,
+        selected: selection?.kind === "node" && selection.id === folderNode.id,
+        ariaLabel: `${folderNode.label}, ${folderNode.files.length} files, imported by ${folderNode.fanIn}, imports ${folderNode.fanOut}`,
+      };
+    }),
+    [
+      active.nodeIds,
+      activeRole,
+      closeNode,
+      dimensions,
+      expandedIds,
+      graph.nodes,
+      hoverFile,
+      hoverNode,
+      positions,
+      roleColors,
+      selectFile,
+      selection,
+    ],
+  );
+  const hoveredFile = hovered?.kind === "file" ? hovered.path : null;
+  const nodes = useMemo<ModuleFlowNode[]>(() => {
+    if (hoveredFile === null) return baseNodes;
 
-  const edges: DependencyFlowEdge[] = visualEdges.map((edge) => {
-    const direction = active.edgeDirections.get(edge.id);
-    const stroke =
-      direction === "incoming"
-        ? "var(--imported-by)"
-        : direction === "outgoing"
-          ? "var(--imports)"
-          : direction === "both"
-            ? "var(--accent)"
-            : "var(--muted)";
+    const nodeId = graph.fileToNode[hoveredFile];
+    return baseNodes.map((node) =>
+      node.id === nodeId
+        ? { ...node, data: { ...node.data, hoveredFile } }
+        : node,
+    );
+  }, [baseNodes, graph.fileToNode, hoveredFile]);
 
-    return {
-      ...edge,
-      type: "smoothstep",
-      animated: false,
-      selectable: false,
-      style: {
-        stroke,
-        strokeWidth: active.edgeIds.has(edge.id) ? 1.5 : 1,
-        opacity:
-          activeRole !== null
-            ? edgeMatchesRole(graph, edge, activeRole)
-              ? 0.32
-              : 0.04
-            : selection === null
-              ? 0.32
-              : active.edgeIds.has(edge.id)
-                ? 0.9
-                : 0.06,
-      },
-    };
-  });
+  const edges = useMemo<DependencyFlowEdge[]>(
+    () => visualEdges.map((edge) => {
+      const direction = active.edgeDirections.get(edge.id);
+      const stroke =
+        direction === "incoming"
+          ? "var(--imported-by)"
+          : direction === "outgoing"
+            ? "var(--imports)"
+            : direction === "both"
+              ? "var(--accent)"
+              : "var(--muted)";
+
+      return {
+        ...edge,
+        type: "smoothstep",
+        animated: false,
+        selectable: false,
+        style: {
+          stroke,
+          strokeWidth: active.edgeIds.has(edge.id) ? 1.5 : 1,
+          opacity:
+            activeRole !== null
+              ? edgeMatchesRole(graph, edge, activeRole)
+                ? 0.32
+                : 0.04
+              : selection === null
+                ? 0.32
+                : active.edgeIds.has(edge.id)
+                  ? 0.9
+                  : 0.06,
+        },
+      };
+    }),
+    [active.edgeDirections, active.edgeIds, activeRole, graph, selection, visualEdges],
+  );
+
+  const handleNodeMouseEnter = useCallback<NodeMouseHandler<ModuleFlowNode>>(
+    (_, node) => hoverNode(node.id),
+    [hoverNode],
+  );
+  const handleNodeMouseLeave = useCallback<NodeMouseHandler<ModuleFlowNode>>(
+    () => hoverNode(null),
+    [hoverNode],
+  );
 
   useEffect(() => {
     if (refitVersion === 0) return;
@@ -235,6 +302,11 @@ function Canvas({
           </span>
         </div>
         <div className="ml-auto flex items-center gap-3">
+          {!tracingConfigured ? (
+            <span className="border border-border px-1.5 py-0.5 font-mono text-[8px] text-muted">
+              Tracing off
+            </span>
+          ) : null}
           <div className="hidden items-center gap-3 font-mono text-[9px] text-muted sm:flex">
             <span>{graph.nodes.length} modules</span>
             <span>{Object.keys(graph.fileToNode).length} files</span>
@@ -319,17 +391,15 @@ function Canvas({
             fitView
             fitViewOptions={{ padding: 0.12, maxZoom: 0.9 }}
             proOptions={{ hideAttribution: true }}
-             onNodeClick={(_, node) => {
-               if (expandedIds.has(node.id)) return;
-               setHovered(null);
-               setSelection({ kind: "node", id: node.id });
+            onNodeClick={(_, node) => {
+              if (expandedIds.has(node.id)) return;
+              setHovered(null);
+              setSelection({ kind: "node", id: node.id });
               setExpandedIds((current) => new Set(current).add(node.id));
               setRefitVersion((version) => version + 1);
             }}
-            onNodeMouseEnter={(_, node) =>
-              setHovered({ kind: "node", id: node.id })
-            }
-            onNodeMouseLeave={() => setHovered(null)}
+            onNodeMouseEnter={handleNodeMouseEnter}
+            onNodeMouseLeave={handleNodeMouseLeave}
             onPaneClick={() => {
               setHovered(null);
               setSelection(null);
@@ -364,6 +434,7 @@ function Canvas({
           className="flex min-h-0 flex-col border-l border-border bg-surface"
         >
           <DetailPane
+            analysisId={analysisId}
             activeTab={detailTab}
             framework={framework}
             graph={graph}
@@ -373,8 +444,12 @@ function Canvas({
             routes={routes}
             selection={selection}
             unidentifiedFileCount={unidentifiedFileCount}
+            explanations={explanations}
             onHover={setHovered}
             onSelectFile={selectFile}
+            onStoreExplanation={(key, explanation) =>
+              setExplanations((current) => ({ ...current, [key]: explanation }))
+            }
             onTabChange={setDetailTab}
           />
         </aside>
@@ -386,6 +461,7 @@ function Canvas({
 /** Show the selected file, module, or repository details, with insights in the structure tab. */
 function DetailPane({
   activeTab,
+  analysisId,
   framework,
   graph,
   hovered,
@@ -394,11 +470,14 @@ function DetailPane({
   routes,
   selection,
   unidentifiedFileCount,
+  explanations,
   onHover,
   onSelectFile,
+  onStoreExplanation,
   onTabChange,
 }: {
   activeTab: DetailTab;
+  analysisId: string;
   framework: string | null;
   graph: FoldedGraph;
   hovered: Exclude<Selection, null> | null;
@@ -407,8 +486,10 @@ function DetailPane({
   routes: Route[];
   selection: Selection;
   unidentifiedFileCount: number;
+  explanations: Record<string, ExplanationResult>;
   onHover: (target: Exclude<Selection, null> | null) => void;
   onSelectFile: (path: string) => void;
+  onStoreExplanation: (key: string, explanation: ExplanationResult) => void;
   onTabChange: (tab: DetailTab) => void;
 }) {
   const selectedFile =
@@ -418,6 +499,14 @@ function DetailPane({
       ? graph.nodes.find((node) => node.id === selection.id) ?? null
       : null;
   const title = selectedFile?.path ?? selectedNode?.label ?? repositoryName;
+  const explanationTarget: ExplanationTarget | null = selectedFile
+    ? { kind: "file", path: selectedFile.path }
+    : selectedNode
+      ? { kind: "folder", path: selectedNode.id }
+      : null;
+  const explanationKey = explanationTarget
+    ? `${explanationTarget.kind}:${explanationTarget.path}`
+    : null;
 
   return (
     <>
@@ -446,12 +535,16 @@ function DetailPane({
       </div>
       <div className="tool-scrollbar min-h-0 flex-1 overflow-y-auto">
         {activeTab === "explanation" ? (
-          <div className="px-3 py-5">
-            <p className="text-[11px] font-medium">No explanation yet</p>
-            <p className="mt-1 text-[10px] leading-4 text-muted">
-              Explanations will appear here when model calls are available.
-            </p>
-          </div>
+          <ExplanationPane
+            analysisId={analysisId}
+            explanation={explanationKey ? explanations[explanationKey] : undefined}
+            graph={graph}
+            target={explanationTarget}
+            onSelectFile={onSelectFile}
+            onStore={(explanation) => {
+              if (explanationKey) onStoreExplanation(explanationKey, explanation);
+            }}
+          />
         ) : selectedFile ? (
           <FileDetails
             file={selectedFile}
@@ -487,6 +580,176 @@ function DetailPane({
       </div>
     </>
   );
+}
+
+function ExplanationPane({
+  analysisId,
+  explanation,
+  graph,
+  target,
+  onSelectFile,
+  onStore,
+}: {
+  analysisId: string;
+  explanation: ExplanationResult | undefined;
+  graph: FoldedGraph;
+  target: ExplanationTarget | null;
+  onSelectFile: (path: string) => void;
+  onStore: (explanation: ExplanationResult) => void;
+}) {
+  const [isPending, startTransition] = useTransition();
+
+  if (!target) {
+    return (
+      <div className="px-3 py-5 text-[10px] leading-4 text-muted">
+        Select a file or folded folder to explain it.
+      </div>
+    );
+  }
+
+  const explain = () => {
+    startTransition(async () => {
+      onStore(await requestExplanation(analysisId, target));
+    });
+  };
+
+  return (
+    <div className="px-3 py-4">
+      {explanation?.status === "ready" ? (
+        <RestrictedMarkdown
+          content={explanation.content}
+          paths={explanation.shownPaths.filter((path) => path in graph.fileToNode)}
+          onSelectFile={onSelectFile}
+        />
+      ) : explanation?.status === "stale" ? (
+        <div className="border-l-2 border-imports pl-2.5">
+          <p className="text-[10px] font-semibold">Analysis is stale</p>
+          <p className="mt-1 text-[10px] leading-4 text-muted">
+            The repository has moved past the analysed commit or this file changed.
+          </p>
+          <form action={rerunAnalysis} className="mt-3">
+            <input name="analysisId" type="hidden" value={analysisId} />
+            <button
+              className="border border-foreground bg-foreground px-2 py-1.5 text-[9px] font-semibold text-surface hover:border-accent hover:bg-accent"
+              type="submit"
+            >
+              Re-analyse
+            </button>
+          </form>
+        </div>
+      ) : explanation?.status === "error" ? (
+        <p className="text-[10px] leading-4 text-muted">{explanation.message}</p>
+      ) : (
+        <p className="text-[10px] leading-4 text-muted">
+          {target.kind === "file"
+            ? "Explain this file from its direct imports and dependents."
+            : "Explain what is in this folder and why files point at it."}
+        </p>
+      )}
+
+      {explanation?.status !== "stale" ? (
+        <button
+          className="mt-4 border border-foreground bg-foreground px-2 py-1.5 text-[9px] font-semibold text-surface hover:border-accent hover:bg-accent disabled:cursor-wait disabled:border-border disabled:bg-surface-muted disabled:text-muted"
+          disabled={isPending}
+          onClick={explain}
+          type="button"
+        >
+          {isPending ? "Explaining..." : explanation?.status === "ready" ? "Explain again" : "Explain"}
+        </button>
+      ) : null}
+    </div>
+  );
+}
+
+function RestrictedMarkdown({
+  content,
+  paths,
+  onSelectFile,
+}: {
+  content: string;
+  paths: readonly string[];
+  onSelectFile: (path: string) => void;
+}) {
+  const blocks = content.trim().split(/\n\s*\n/u);
+
+  return (
+    <div className="space-y-2.5 text-[10px] leading-[1.55]">
+      {blocks.map((block, blockIndex) => {
+        const lines = block.split("\n").map((line) => line.replace(/^#{1,6}\s*/u, ""));
+        if (lines.every((line) => /^[-*]\s+/u.test(line))) {
+          return (
+            <ul className="space-y-1 pl-3" key={blockIndex}>
+              {lines.map((line, lineIndex) => (
+                <li className="relative before:absolute before:-left-3 before:text-muted before:content-['-']" key={lineIndex}>
+                  {renderInline(line.replace(/^[-*]\s+/u, ""), paths, onSelectFile)}
+                </li>
+              ))}
+            </ul>
+          );
+        }
+        return (
+          <p key={blockIndex}>
+            {renderInline(lines.join(" "), paths, onSelectFile)}
+          </p>
+        );
+      })}
+    </div>
+  );
+}
+
+function renderInline(
+  text: string,
+  paths: readonly string[],
+  onSelectFile: (path: string) => void,
+): React.ReactNode[] {
+  const parts = text.split(/(`[^`]*`|\*\*[^*]+\*\*)/u);
+  return parts.flatMap((part, index) => {
+    if (part.startsWith("`") && part.endsWith("`")) {
+      return renderPaths(part.slice(1, -1), paths, onSelectFile, `code-${index}`, true);
+    }
+    if (part.startsWith("**") && part.endsWith("**")) {
+      return (
+        <strong className="font-semibold" key={`bold-${index}`}>
+          {renderPaths(part.slice(2, -2), paths, onSelectFile, `bold-${index}`, false)}
+        </strong>
+      );
+    }
+    return renderPaths(part.replace(/[*`#]/gu, ""), paths, onSelectFile, `text-${index}`, false);
+  });
+}
+
+function renderPaths(
+  text: string,
+  paths: readonly string[],
+  onSelectFile: (path: string) => void,
+  keyPrefix: string,
+  code: boolean,
+): React.ReactNode[] {
+  if (paths.length === 0) {
+    return [code ? <code className="bg-surface-muted px-1 font-mono" key={keyPrefix}>{text}</code> : text];
+  }
+  const pattern = new RegExp(`(${paths.map(escapeRegExp).join("|")})`, "gu");
+  return text.split(pattern).filter(Boolean).map((part, index) => {
+    if (paths.includes(part)) {
+      return (
+        <button
+          className="font-mono text-accent hover:underline focus-visible:outline-2 focus-visible:outline-accent"
+          key={`${keyPrefix}-${index}`}
+          onClick={() => onSelectFile(part)}
+          type="button"
+        >
+          {part}
+        </button>
+      );
+    }
+    return code
+      ? <code className="bg-surface-muted px-1 font-mono" key={`${keyPrefix}-${index}`}>{part}</code>
+      : part;
+  });
+}
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
 }
 
 function RepositoryDetails({

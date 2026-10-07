@@ -4,6 +4,7 @@ import { auth, clerkClient } from "@clerk/nextjs/server";
 import { after } from "next/server";
 import { redirect } from "next/navigation";
 
+import { explainTarget, type ExplanationResult, type ExplanationTarget } from "@/lib/ai/explain";
 import { runAnalysis } from "@/lib/analysis/run-analysis";
 import { parseGitHubRepositoryUrl } from "@/lib/github/repository-archive";
 import {
@@ -98,6 +99,31 @@ export async function rerunAnalysis(formData: FormData): Promise<void> {
   }
 
   redirect(`/analyses/${analysisId}`);
+}
+
+export async function requestExplanation(
+  analysisId: string,
+  target: ExplanationTarget,
+): Promise<ExplanationResult> {
+  const authentication = await auth();
+  if (!authentication.userId || !authentication.orgId) {
+    return { status: "error", message: "Select an organization first" };
+  }
+  if (!analysisId || !target.path || (target.kind !== "file" && target.kind !== "folder")) {
+    return { status: "error", message: "Invalid explanation target" };
+  }
+
+  try {
+    return await explainTarget(
+      createServerSupabaseClient(authentication.getToken),
+      createAnalysisWorkerClient(),
+      analysisId,
+      target,
+    );
+  } catch (error) {
+    console.error("Explanation failed", error);
+    return { status: "error", message: "Could not generate this explanation" };
+  }
 }
 
 export async function inviteMember(

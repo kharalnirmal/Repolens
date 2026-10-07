@@ -1,5 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 
+import { classifyFallbackFiles } from "@/lib/ai/classify";
 import { withFetchedRepository } from "@/lib/github/repository-archive";
 import type { Database, Json } from "@/lib/supabase/database.types";
 import { parseRepository } from "@/parser/index";
@@ -16,7 +17,7 @@ export async function runAnalysis(
   try {
     const { data: analysis, error: analysisError } = await worker
       .from("analyses")
-      .select("project_id")
+      .select("project_id, organization_id")
       .eq("id", analysisId)
       .single();
     if (analysisError) throw analysisError;
@@ -58,6 +59,12 @@ export async function runAnalysis(
           );
         },
       });
+      const fileRoles = await classifyFallbackFiles(
+        worker,
+        analysis.organization_id,
+        result.files,
+        result.fileRoles,
+      );
 
       stage = "store";
       await setRunState(
@@ -92,7 +99,7 @@ export async function runAnalysis(
           })),
         ),
         p_file_roles: toJson(
-          result.fileRoles.map((fileRole) => ({
+          fileRoles.map((fileRole) => ({
             file_path: fileRole.filePath,
             role: fileRole.role,
             source: fileRole.source,
