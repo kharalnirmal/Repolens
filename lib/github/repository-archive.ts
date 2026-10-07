@@ -96,6 +96,34 @@ export async function withFetchedRepository<T>(
   }
 }
 
+export async function fetchCurrentRepositoryCommit(repositoryUrl: string): Promise<string> {
+  const repository = parseGitHubRepositoryUrl(repositoryUrl);
+  const metadata = await fetchJson(
+    `https://api.github.com/repos/${repository.owner}/${repository.name}`,
+  );
+  const defaultBranch = readString(metadata, "default_branch");
+  const commit = await fetchJson(
+    `https://api.github.com/repos/${repository.owner}/${repository.name}/commits/${encodeURIComponent(defaultBranch)}`,
+  );
+  return readString(commit, "sha");
+}
+
+export async function fetchRepositoryFile(
+  repositoryUrl: string,
+  commitSha: string,
+  filePath: string,
+): Promise<string> {
+  const repository = parseGitHubRepositoryUrl(repositoryUrl);
+  if (filePath.split("/").some((part) => !part || part === "." || part === "..")) {
+    throw new Error("Repository file path is invalid");
+  }
+  const encodedPath = filePath.split("/").map(encodeURIComponent).join("/");
+  const response = await githubFetch(
+    `https://raw.githubusercontent.com/${repository.owner}/${repository.name}/${encodeURIComponent(commitSha)}/${encodedPath}`,
+  );
+  return response.text();
+}
+
 async function fetchJson(url: string): Promise<unknown> {
   const response = await githubFetch(url);
   return response.json();

@@ -8,6 +8,7 @@ import { AnalysisCanvas } from "@/components/analysis-canvas";
 import { AnalysisProgress } from "@/components/analysis-progress";
 import { ThemeControl } from "@/components/theme-control";
 import { loadAnalysisGraph } from "@/lib/analysis/load-analysis-graph";
+import { tracingConfigured } from "@/lib/ai/client";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 
 export const maxDuration = 300;
@@ -45,7 +46,13 @@ export default async function AnalysisPage({
 
   if (analysis.status === "completed") {
     const graph = await loadAnalysisGraph(supabase, analysis.id);
-    return <AnalysisCanvas {...graph} />;
+    return (
+      <AnalysisCanvas
+        {...graph}
+        analysisId={analysis.id}
+        tracingConfigured={tracingConfigured}
+      />
+    );
   }
 
   return (

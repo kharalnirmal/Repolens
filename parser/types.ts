@@ -95,7 +95,7 @@ export interface AdapterContext {
 export interface FileRole {
   filePath: string;
   role: string;
-  source: "convention" | "fallback";
+  source: "convention" | "model" | "fallback";
 }
 
 export interface ExtractedRoute {

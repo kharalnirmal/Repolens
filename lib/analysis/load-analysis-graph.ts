@@ -166,7 +166,7 @@ function readImportKind(value: Json | undefined): ImportKind {
   throw new Error("Stored import kind is invalid");
 }
 
-function readRoleSource(value: Json | undefined): "convention" | "fallback" {
-  if (value === "convention" || value === "fallback") return value;
+function readRoleSource(value: Json | undefined): "convention" | "model" | "fallback" {
+  if (value === "convention" || value === "model" || value === "fallback") return value;
   throw new Error("Stored file role source is invalid");
 }

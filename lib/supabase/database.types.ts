@@ -38,6 +38,68 @@ export type Database = {
           },
         ];
       };
+      edges: {
+        Row: {
+          analysis_id: string;
+          created_at: string;
+          id: string;
+          kind: string;
+          organization_id: string;
+          source_file_id: string;
+          specifier: string;
+          target_file_id: string;
+        };
+        Insert: never;
+        Update: never;
+        Relationships: [];
+      };
+      explanations: {
+        Row: {
+          analysis_id: string;
+          content: string;
+          content_hash: string;
+          created_at: string;
+          file_id: string | null;
+          folder_path: string | null;
+          id: string;
+          model: string;
+          organization_id: string;
+          prompt_version: string;
+          shown_paths: string[];
+        };
+        Insert: {
+          analysis_id: string;
+          content: string;
+          content_hash: string;
+          created_at?: string;
+          file_id?: string | null;
+          folder_path?: string | null;
+          id?: string;
+          model: string;
+          organization_id: string;
+          prompt_version: string;
+          shown_paths: string[];
+        };
+        Update: never;
+        Relationships: [];
+      };
+      files: {
+        Row: {
+          analysis_id: string;
+          content: string;
+          content_hash: string;
+          created_at: string;
+          exports: string[];
+          id: string;
+          line_count: number;
+          module_kind: string | null;
+          organization_id: string;
+          path: string;
+        };
+        Insert: never;
+        Update: never;
+        Relationships: [];
+      };
       organizations: {
         Row: {
           created_at: string;
@@ -68,6 +130,26 @@ export type Database = {
           },
         ];
       };
+      role_classification_cache: {
+        Row: {
+          content_hash: string;
+          created_at: string;
+          model: string;
+          organization_id: string;
+          prompt_version: string;
+          role: string;
+        };
+        Insert: {
+          content_hash: string;
+          created_at?: string;
+          model: string;
+          organization_id: string;
+          prompt_version: string;
+          role: string;
+        };
+        Update: never;
+        Relationships: [];
+      };
     };
     Views: Record<string, never>;
     Functions: {
@@ -87,6 +169,18 @@ export type Database = {
           p_analysis_id: string;
         };
         Returns: Json;
+      };
+      get_role_classifications: {
+        Args: {
+          p_content_hashes: string[];
+          p_model: string;
+          p_organization_id: string;
+          p_prompt_version: string;
+        };
+        Returns: {
+          content_hash: string;
+          role: string;
+        }[];
       };
       restart_failed_analysis: {
         Args: {
