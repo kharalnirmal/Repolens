@@ -26,12 +26,12 @@ export function InviteMemberForm() {
         required
         placeholder="teammate@example.com"
         aria-describedby="invite-status"
-        className="h-7 min-w-0 flex-1 rounded border border-border bg-background px-2 text-xs text-foreground outline-none placeholder:text-muted focus:border-accent md:w-44 md:flex-none"
+        className="h-7 min-w-0 flex-1 border border-border bg-background px-2 font-mono text-[10px] text-foreground outline-none placeholder:text-muted focus:border-accent md:w-44 md:flex-none"
       />
       <button
         type="submit"
         disabled={pending}
-        className="h-7 rounded border border-border bg-surface-muted px-2.5 text-xs font-medium hover:border-accent disabled:cursor-wait disabled:opacity-60"
+        className="h-7 border border-border bg-surface-muted px-2.5 font-mono text-[10px] font-medium hover:border-accent disabled:cursor-wait disabled:opacity-60"
       >
         {pending ? "Sending..." : "Invite"}
       </button>

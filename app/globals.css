@@ -8,6 +8,16 @@
   --foreground: #181817;
   --muted: #686864;
   --accent: #2563eb;
+  --incoming: #15803d;
+  --outgoing: #b45309;
+  --scrollbar-thumb: #9b9b95;
+  --scrollbar-thumb-hover: #74746f;
+  --file-kind-1: #7c3aed;
+  --file-kind-2: #0369a1;
+  --file-kind-3: #be185d;
+  --file-kind-4: #0f766e;
+  --file-kind-5: #b91c1c;
+  --file-kind-6: #4f46e5;
   color-scheme: light;
 }
 
@@ -19,6 +29,8 @@
   --color-foreground: var(--foreground);
   --color-muted: var(--muted);
   --color-accent: var(--accent);
+  --color-incoming: var(--incoming);
+  --color-outgoing: var(--outgoing);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
 }
@@ -31,6 +43,16 @@
   --foreground: #eeeeec;
   --muted: #999994;
   --accent: #60a5fa;
+  --incoming: #4ade80;
+  --outgoing: #fbbf24;
+  --scrollbar-thumb: #555550;
+  --scrollbar-thumb-hover: #73736d;
+  --file-kind-1: #a78bfa;
+  --file-kind-2: #38bdf8;
+  --file-kind-3: #f472b6;
+  --file-kind-4: #2dd4bf;
+  --file-kind-5: #f87171;
+  --file-kind-6: #818cf8;
   color-scheme: dark;
 }
 
@@ -43,6 +65,16 @@
     --foreground: #eeeeec;
     --muted: #999994;
     --accent: #60a5fa;
+    --incoming: #4ade80;
+    --outgoing: #fbbf24;
+    --scrollbar-thumb: #555550;
+    --scrollbar-thumb-hover: #73736d;
+    --file-kind-1: #a78bfa;
+    --file-kind-2: #38bdf8;
+    --file-kind-3: #f472b6;
+    --file-kind-4: #2dd4bf;
+    --file-kind-5: #f87171;
+    --file-kind-6: #818cf8;
     color-scheme: dark;
   }
 }
@@ -51,6 +83,35 @@ body {
   background: var(--background);
   color: var(--foreground);
   font-family: var(--font-geist-sans), Arial, Helvetica, sans-serif;
+}
+
+::selection {
+  background: var(--accent);
+  color: var(--surface);
+}
+
+.tool-scrollbar {
+  scrollbar-color: var(--scrollbar-thumb) var(--surface-muted);
+  scrollbar-gutter: stable;
+  scrollbar-width: thin;
+}
+
+.tool-scrollbar::-webkit-scrollbar {
+  width: 8px;
+}
+
+.tool-scrollbar::-webkit-scrollbar-track {
+  background: var(--surface-muted);
+  border-left: 1px solid var(--border);
+}
+
+.tool-scrollbar::-webkit-scrollbar-thumb {
+  background: var(--scrollbar-thumb);
+  border: 1px solid var(--surface-muted);
+}
+
+.tool-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: var(--scrollbar-thumb-hover);
 }
 
 button,
