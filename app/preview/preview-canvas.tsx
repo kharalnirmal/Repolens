@@ -86,6 +86,7 @@ export function PreviewCanvas(props: PreviewCanvasProps) {
   );
 }
 
+/** Coordinate graph selection, category dimming, layout, and the detail pane. */
 function Canvas({
   repositoryName,
   framework,
@@ -366,6 +367,7 @@ function Canvas({
   );
 }
 
+/** Show the selected file, module, or repository details, with insights in the structure tab. */
 function DetailPane({
   activeTab,
   framework,
@@ -549,6 +551,7 @@ function RepositoryDetails({
   );
 }
 
+/** Show direct imports and importers, plus on-demand dependency walks within two levels. */
 function FileDetails({
   file,
   graph,
@@ -661,6 +664,7 @@ function FileDetails({
   );
 }
 
+/** Render a traversal action with its pressed state and direction-specific color. */
 function WalkButton({
   active,
   direction,
@@ -690,6 +694,7 @@ function WalkButton({
   );
 }
 
+/** Render the four graph insight categories in an initially collapsed panel. */
 function InsightsPanel({
   graph,
   insights,
@@ -772,6 +777,7 @@ function InsightsPanel({
   );
 }
 
+/** Show one insight description with selectable file paths or an empty result. */
 function InsightGroup({
   graph,
   paths,
@@ -920,6 +926,7 @@ function findFile(graph: FoldedGraph, filePath: string): CanvasFile | null {
   ) ?? null;
 }
 
+/** Render a folded module or its file panel, including category match counts and dimming. */
 function ModuleNode({ data, selected }: NodeProps<ModuleFlowNode>) {
   const {
     folderNode,
@@ -1056,6 +1063,7 @@ function ModuleNode({ data, selected }: NodeProps<ModuleFlowNode>) {
   );
 }
 
+/** Render a selectable file with dependency handles, hover feedback, and category dimming. */
 function FileRow({
   file,
   color,
@@ -1286,6 +1294,7 @@ function getActiveElements(
   return { nodeIds, edgeIds, edgeDirections };
 }
 
+/** Return whether any source or target file represented by an edge matches the extension. */
 function edgeMatchesCategory(
   edge: DependencyFlowEdge,
   category: string,

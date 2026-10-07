@@ -29,6 +29,11 @@ interface DirectoryGroup {
 
 const targetNodeCount = 24;
 
+/**
+ * Fold directory groups into at most 24 canvas nodes while retaining file-level edges.
+ * Raise the merge threshold as needed and count imports between resulting groups.
+ * @throws If an edge endpoint is missing from the supplied files.
+ */
 export function foldGraph(
   files: readonly ParsedFile[],
   edges: readonly DependencyEdge[],

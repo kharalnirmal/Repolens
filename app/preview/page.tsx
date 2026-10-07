@@ -16,6 +16,7 @@ const categoryColors = [
   "var(--file-kind-6)",
 ];
 
+/** Build the preview graph, insights, and file categories from the checked-in analysis. */
 export default function PreviewPage() {
   const graph = foldGraph(analysis.files, analysis.edges);
   const conventionEntryPaths = new Set(
