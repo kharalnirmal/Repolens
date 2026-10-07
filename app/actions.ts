@@ -6,7 +6,10 @@ import { redirect } from "next/navigation";
 
 import { runAnalysis } from "@/lib/analysis/run-analysis";
 import { parseGitHubRepositoryUrl } from "@/lib/github/repository-archive";
-import { createServerSupabaseClient } from "@/lib/supabase/server";
+import {
+  createAnalysisWorkerClient,
+  createServerSupabaseClient,
+} from "@/lib/supabase/server";
 
 export type InviteState = {
   status: "idle" | "success" | "error";
@@ -57,7 +60,11 @@ export async function analyzeRepository(
   if (analysis.was_created) {
     after(async () => {
       try {
-        await runAnalysis(supabase, analysis.analysis_id);
+        await runAnalysis(
+          createAnalysisWorkerClient(),
+          supabase,
+          analysis.analysis_id,
+        );
       } catch (pipelineError) {
         console.error("Analysis pipeline failed", pipelineError);
       }
@@ -83,7 +90,7 @@ export async function rerunAnalysis(formData: FormData): Promise<void> {
   if (shouldRun) {
     after(async () => {
       try {
-        await runAnalysis(supabase, analysisId);
+        await runAnalysis(createAnalysisWorkerClient(), supabase, analysisId);
       } catch (pipelineError) {
         console.error("Analysis pipeline failed", pipelineError);
       }

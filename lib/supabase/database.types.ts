@@ -105,16 +105,25 @@ export type Database = {
         Returns: undefined;
       };
       store_analysis_result: {
-        Args: {
-          p_analysis_id: string;
-          p_commit_sha: string;
-          p_coverage: Json;
-          p_edges: Json;
-          p_file_roles: Json;
-          p_files: Json;
-          p_framework: string | null;
-          p_routes: Json;
-        };
+        Args:
+          | {
+              p_analysis_id: string;
+              p_commit_sha: string;
+              p_coverage: Json;
+              p_edges: Json;
+              p_file_roles?: Json;
+              p_files: Json;
+              p_framework: string | null;
+              p_routes?: Json;
+            }
+          | {
+              p_analysis_id: string;
+              p_commit_sha: string;
+              p_coverage: Json;
+              p_edges: Json;
+              p_files: Json;
+              p_framework: string | null;
+            };
         Returns: undefined;
       };
     };

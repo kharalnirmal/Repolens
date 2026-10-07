@@ -232,16 +232,23 @@ async function readPackageNames(root: string): Promise<ReadonlySet<string>> {
 }
 
 function deduplicateRoutes(routes: readonly ExtractedRoute[]): ExtractedRoute[] {
-  const unique = new Map<string, ExtractedRoute>();
+  const routesByEndpoint = new Map<string, Map<string, ExtractedRoute>>();
   for (const route of routes) {
-    unique.set([route.filePath, route.method, route.path].join("\0"), route);
+    const endpoint = [route.method, route.path].join("\0");
+    const routesByFile = routesByEndpoint.get(endpoint) ?? new Map();
+    routesByFile.set(route.filePath, route);
+    routesByEndpoint.set(endpoint, routesByFile);
   }
-  return [...unique.values()].toSorted(
+
+  return [...routesByEndpoint.values()]
+    .filter((routesByFile) => routesByFile.size === 1)
+    .map((routesByFile) => [...routesByFile.values()][0])
+    .toSorted(
     (left, right) =>
       left.path.localeCompare(right.path) ||
       left.method.localeCompare(right.method) ||
       left.filePath.localeCompare(right.filePath),
-  );
+    );
 }
 
 function createProject(root: string): Project {

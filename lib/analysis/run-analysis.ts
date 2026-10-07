@@ -7,32 +7,40 @@ import { parseRepository } from "@/parser/index";
 export type AnalysisStage = "fetch" | "select" | "parse" | "store";
 
 export async function runAnalysis(
-  supabase: SupabaseClient<Database>,
+  worker: SupabaseClient<Database>,
+  legacyCaller: SupabaseClient<Database>,
   analysisId: string,
 ): Promise<void> {
   let stage: AnalysisStage = "fetch";
 
   try {
-    const { data: analysis, error: analysisError } = await supabase
+    const { data: analysis, error: analysisError } = await worker
       .from("analyses")
       .select("project_id")
       .eq("id", analysisId)
       .single();
     if (analysisError) throw analysisError;
 
-    const { data: project, error: projectError } = await supabase
+    const { data: project, error: projectError } = await worker
       .from("projects")
       .select("repository_url")
       .eq("id", analysis.project_id)
       .single();
     if (projectError) throw projectError;
 
-    await setRunState(supabase, analysisId, stage, "Fetching repository archive");
+    await setRunState(
+      worker,
+      legacyCaller,
+      analysisId,
+      stage,
+      "Fetching repository archive",
+    );
 
     await withFetchedRepository(project.repository_url, async (repository) => {
       stage = "select";
       await setRunState(
-        supabase,
+        worker,
+        legacyCaller,
         analysisId,
         stage,
         "Selecting supported source files",
@@ -42,7 +50,8 @@ export async function runAnalysis(
         onFilesSelected: async (fileCount) => {
           stage = "parse";
           await setRunState(
-            supabase,
+            worker,
+            legacyCaller,
             analysisId,
             stage,
             `Parsing ${fileCount} source files`,
@@ -51,9 +60,15 @@ export async function runAnalysis(
       });
 
       stage = "store";
-      await setRunState(supabase, analysisId, stage, "Storing dependency graph");
+      await setRunState(
+        worker,
+        legacyCaller,
+        analysisId,
+        stage,
+        "Storing dependency graph",
+      );
 
-      const { error } = await supabase.rpc("store_analysis_result", {
+      const resultArguments = {
         p_analysis_id: analysisId,
         p_commit_sha: repository.commitSha,
         p_framework: result.adapter.framework,
@@ -90,12 +105,33 @@ export async function runAnalysis(
             path: route.path,
           })),
         ),
-      });
+      };
+      let { error } = await worker.rpc("store_analysis_result", resultArguments);
+      if (requiresOrganizationClaim(error)) {
+        ({ error } = await legacyCaller.rpc(
+          "store_analysis_result",
+          resultArguments,
+        ));
+      }
+      if (isOldStorageSignature(error)) {
+        const legacyArguments = {
+          p_analysis_id: resultArguments.p_analysis_id,
+          p_commit_sha: resultArguments.p_commit_sha,
+          p_framework: resultArguments.p_framework,
+          p_coverage: resultArguments.p_coverage,
+          p_files: resultArguments.p_files,
+          p_edges: resultArguments.p_edges,
+        };
+        ({ error } = await legacyCaller.rpc(
+          "store_analysis_result",
+          legacyArguments,
+        ));
+      }
       if (error) throw error;
     });
   } catch (error) {
     const message = errorMessage(error);
-    const { error: stateError } = await supabase.rpc("set_analysis_run_state", {
+    const stateError = await writeRunState(worker, legacyCaller, {
       p_analysis_id: analysisId,
       p_status: "failed",
       p_stage: stage,
@@ -114,12 +150,13 @@ export async function runAnalysis(
 }
 
 async function setRunState(
-  supabase: SupabaseClient<Database>,
+  worker: SupabaseClient<Database>,
+  legacyCaller: SupabaseClient<Database>,
   analysisId: string,
   stage: AnalysisStage,
   message: string,
 ): Promise<void> {
-  const { error } = await supabase.rpc("set_analysis_run_state", {
+  const error = await writeRunState(worker, legacyCaller, {
     p_analysis_id: analysisId,
     p_status: "running",
     p_stage: stage,
@@ -127,6 +164,32 @@ async function setRunState(
     p_error_message: null,
   });
   if (error) throw error;
+}
+
+type RunStateArguments = Database["public"]["Functions"]["set_analysis_run_state"]["Args"];
+
+async function writeRunState(
+  worker: SupabaseClient<Database>,
+  legacyCaller: SupabaseClient<Database>,
+  arguments_: RunStateArguments,
+) {
+  let { error } = await worker.rpc("set_analysis_run_state", arguments_);
+  if (requiresOrganizationClaim(error)) {
+    ({ error } = await legacyCaller.rpc("set_analysis_run_state", arguments_));
+  }
+  return error;
+}
+
+function requiresOrganizationClaim(
+  error: { message: string } | null,
+): boolean {
+  return error?.message.includes("An active organization is required") ?? false;
+}
+
+function isOldStorageSignature(
+  error: { code?: string } | null,
+): boolean {
+  return error?.code === "PGRST202";
 }
 
 function toJson(value: unknown): Json {
