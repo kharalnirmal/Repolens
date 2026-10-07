@@ -80,5 +80,6 @@ export interface AdapterContext {
 export interface ParserAdapter {
   readonly name: string;
   detect(context: AdapterContext): string | null;
+  /** Return whether a repository-relative path is an entry reached by convention. */
   isConventionEntry(filePath: string): boolean;
 }

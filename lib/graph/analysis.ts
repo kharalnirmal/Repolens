@@ -24,6 +24,11 @@ export const insightSentences = {
 const oversizedLineCount = 500;
 const minimumUnusualFanIn = 10;
 
+/**
+ * Return sorted, unique paths reachable within the depth limit, excluding the start.
+ * Incoming walks follow importers; outgoing walks follow dependencies. The default
+ * depth is two edges, and depths below one return no paths.
+ */
 export function walkDependencies(
   startPath: string,
   edges: readonly DependencyEdge[],
@@ -60,6 +65,11 @@ export function walkDependencies(
   return [...visited].toSorted();
 }
 
+/**
+ * Derive deterministic insights, excluding conventional entries from unimported files.
+ * Unusual fan-in starts at the greater of ten importers and the 95th percentile;
+ * oversized files exceed 500 lines. Results use stable path tie-breakers.
+ */
 export function calculateInsights(
   files: readonly GraphFile[],
   edges: readonly DependencyEdge[],
@@ -109,6 +119,11 @@ export function calculateInsights(
   };
 }
 
+/**
+ * Find deterministic cycle witnesses using iterative depth-first traversal.
+ * Each witness repeats its first path at the end to show the closing edge.
+ * This does not enumerate every overlapping simple cycle.
+ */
 export function findImportCycles(
   filePaths: readonly string[],
   edges: readonly DependencyEdge[],
@@ -166,6 +181,7 @@ export function findImportCycles(
   );
 }
 
+/** Create a rotation-independent key for a closed cycle while preserving edge direction. */
 function canonicalCycleKey(cycle: readonly string[]): string {
   const nodes = cycle.slice(0, -1);
   if (nodes.length === 0) return "";

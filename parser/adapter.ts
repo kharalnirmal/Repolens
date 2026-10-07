@@ -16,6 +16,7 @@ const conventionalEntryDirectories = new Set(["layouts", "pages", "routes"]);
 export const fallbackAdapter: ParserAdapter = {
   name: "fallback",
   detect: () => null,
+  /** Identify conventional entry or config paths that imports alone may not reach. */
   isConventionEntry: (filePath) => {
     const segments = filePath.split("/");
     const name = segments.at(-1) ?? filePath;
