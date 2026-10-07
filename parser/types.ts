@@ -1,4 +1,9 @@
-export const importKinds = ["import", "re-export", "dynamic-import"] as const;
+export const importKinds = [
+  "import",
+  "re-export",
+  "dynamic-import",
+  "require",
+] as const;
 
 export type ImportKind = (typeof importKinds)[number];
 export type ModuleKind = "esm" | "commonjs" | "script";

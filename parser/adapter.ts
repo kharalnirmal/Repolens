@@ -1,3 +1,4 @@
+import { expressAdapter } from "./adapters/express.ts";
 import { nestjsAdapter } from "./adapters/nestjs.ts";
 import { nextjsAdapter } from "./adapters/nextjs.ts";
 import { reactAdapter } from "./adapters/react.ts";
@@ -15,6 +16,7 @@ export const adapters: readonly ParserAdapter[] = [
   nextjsAdapter,
   nestjsAdapter,
   reactAdapter,
+  expressAdapter,
   fallbackAdapter,
 ];
 

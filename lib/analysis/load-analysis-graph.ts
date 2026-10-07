@@ -26,6 +26,7 @@ const conventionEntryRoles = new Set([
   "layout",
   "middleware",
   "page",
+  "route",
 ]);
 
 export async function loadAnalysisGraph(
@@ -154,7 +155,12 @@ function readModuleKind(value: Json | undefined): ModuleKind {
 }
 
 function readImportKind(value: Json | undefined): ImportKind {
-  if (value === "import" || value === "re-export" || value === "dynamic-import") {
+  if (
+    value === "import" ||
+    value === "re-export" ||
+    value === "dynamic-import" ||
+    value === "require"
+  ) {
     return value;
   }
   throw new Error("Stored import kind is invalid");

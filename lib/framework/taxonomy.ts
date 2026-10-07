@@ -40,6 +40,18 @@ const taxonomies: Record<string, readonly RoleCategory[]> = {
     { role: "config", label: "Configuration" },
     { role: "type", label: "Type declarations" },
   ],
+  Express: [
+    { role: "route", label: "Routes" },
+    { role: "controller", label: "Controllers" },
+    { role: "service", label: "Services" },
+    { role: "model", label: "Models" },
+    { role: "middleware", label: "Middleware" },
+    { role: "entry", label: "Entry points" },
+    { role: "source", label: "Other source" },
+    { role: "test", label: "Tests" },
+    { role: "config", label: "Configuration" },
+    { role: "type", label: "Type declarations" },
+  ],
   React: [
     { role: "entry", label: "Entry points" },
     { role: "component", label: "Components" },

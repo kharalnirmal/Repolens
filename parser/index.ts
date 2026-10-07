@@ -351,6 +351,10 @@ function addSkippedFile(
 function createParsedFile(source: WalkedSource, sourceFile: SourceFile): ParsedFile {
   const extension = path.extname(source.absolutePath).toLowerCase();
   const folder = path.posix.dirname(source.relativePath);
+  const exports = new Set(
+    sourceFile.getExportSymbols().map((symbol) => symbol.getName()),
+  );
+  for (const name of collectCommonJsExports(sourceFile)) exports.add(name);
 
   return {
     path: source.relativePath,
@@ -362,10 +366,7 @@ function createParsedFile(source: WalkedSource, sourceFile: SourceFile): ParsedF
         ? 0
         : source.content.split(/\r\n|\r|\n/u).length,
     moduleKind: detectModuleKind(sourceFile, extension),
-    exports: sourceFile
-      .getExportSymbols()
-      .map((symbol) => symbol.getName())
-      .sort(),
+    exports: [...exports].sort(),
     fanIn: 0,
     fanOut: 0,
   };
@@ -386,7 +387,15 @@ function detectModuleKind(
       ) ||
     sourceFile
       .getExportAssignments()
-      .some((assignment) => assignment.isExportEquals());
+      .some((assignment) => assignment.isExportEquals()) ||
+    sourceFile
+      .getDescendantsOfKind(SyntaxKind.CallExpression)
+      .some((call) => isRequireCall(call)) ||
+    sourceFile
+      .getDescendantsOfKind(SyntaxKind.BinaryExpression)
+      .some((expression) =>
+        isCommonJsExportTarget(expression.getLeft()),
+      );
 
   if (hasCommonJsModuleSyntax) return "commonjs";
   if (
@@ -425,19 +434,122 @@ function collectImports(
 
   sourceFile.forEachDescendant((node) => {
     if (!Node.isCallExpression(node)) return;
-    if (node.getExpression().getKind() !== SyntaxKind.ImportKeyword) return;
-
     const [argument] = node.getArguments();
-    if (
-      argument &&
-      (Node.isStringLiteral(argument) ||
-        Node.isNoSubstitutionTemplateLiteral(argument))
-    ) {
+    if (!argument || !isLiteralString(argument)) return;
+
+    if (node.getExpression().getKind() === SyntaxKind.ImportKeyword) {
       addImport("dynamic-import", argument.getLiteralValue());
+    } else if (isRequireCall(node)) {
+      addImport("require", argument.getLiteralValue());
     }
   });
 
   return imports;
+}
+
+function collectCommonJsExports(sourceFile: SourceFile): string[] {
+  const names = new Set<string>();
+
+  for (const expression of sourceFile.getDescendantsOfKind(
+    SyntaxKind.BinaryExpression,
+  )) {
+    if (expression.getOperatorToken().getKind() !== SyntaxKind.EqualsToken) {
+      continue;
+    }
+
+    const left = expression.getLeft();
+    const memberName = commonJsExportMemberName(left);
+    if (memberName !== null) {
+      names.add(memberName);
+      continue;
+    }
+
+    if (!isModuleExports(left)) continue;
+    const right = expression.getRight();
+    if (!Node.isObjectLiteralExpression(right)) continue;
+
+    for (const property of right.getProperties()) {
+      if (
+        Node.isPropertyAssignment(property) ||
+        Node.isShorthandPropertyAssignment(property) ||
+        Node.isMethodDeclaration(property) ||
+        Node.isGetAccessorDeclaration(property) ||
+        Node.isSetAccessorDeclaration(property)
+      ) {
+        names.add(property.getName());
+      }
+    }
+  }
+
+  for (const call of sourceFile.getDescendantsOfKind(SyntaxKind.CallExpression)) {
+    const expression = call.getExpression();
+    if (!Node.isPropertyAccessExpression(expression)) continue;
+    if (expression.getName() !== "defineProperty") continue;
+    if (expression.getExpression().getText() !== "Object") continue;
+
+    const [target, property] = call.getArguments();
+    if (
+      target &&
+      property &&
+      isCommonJsExportsObject(target) &&
+      isLiteralString(property)
+    ) {
+      names.add(property.getLiteralValue());
+    }
+  }
+
+  return [...names];
+}
+
+function isRequireCall(node: import("ts-morph").CallExpression): boolean {
+  const expression = node.getExpression();
+  return Node.isIdentifier(expression) && expression.getText() === "require";
+}
+
+function isLiteralString(
+  node: import("ts-morph").Node,
+): node is import("ts-morph").StringLiteral | import("ts-morph").NoSubstitutionTemplateLiteral {
+  return Node.isStringLiteral(node) || Node.isNoSubstitutionTemplateLiteral(node);
+}
+
+function isCommonJsExportTarget(node: import("ts-morph").Node): boolean {
+  return isModuleExports(node) || commonJsExportMemberName(node) !== null;
+}
+
+function commonJsExportMemberName(node: import("ts-morph").Node): string | null {
+  if (Node.isPropertyAccessExpression(node)) {
+    return isCommonJsExportsObject(node.getExpression()) ? node.getName() : null;
+  }
+  if (Node.isElementAccessExpression(node)) {
+    const argument = node.getArgumentExpression();
+    return isCommonJsExportsObject(node.getExpression()) && argument && isLiteralString(argument)
+      ? argument.getLiteralValue()
+      : null;
+  }
+  return null;
+}
+
+function isCommonJsExportsObject(node: import("ts-morph").Node): boolean {
+  return (
+    (Node.isIdentifier(node) && node.getText() === "exports") ||
+    isModuleExports(node)
+  );
+}
+
+function isModuleExports(node: import("ts-morph").Node): boolean {
+  if (Node.isPropertyAccessExpression(node)) {
+    return node.getExpression().getText() === "module" && node.getName() === "exports";
+  }
+  if (Node.isElementAccessExpression(node)) {
+    const argument = node.getArgumentExpression();
+    return (
+      node.getExpression().getText() === "module" &&
+      argument !== undefined &&
+      isLiteralString(argument) &&
+      argument.getLiteralValue() === "exports"
+    );
+  }
+  return false;
 }
 
 function resolveImport(
