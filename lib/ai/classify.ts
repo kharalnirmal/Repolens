@@ -3,22 +3,16 @@ import "server-only";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { traceable } from "langsmith/traceable";
 
-import { classificationModel, getAIClient } from "@/lib/ai/client";
+import {
+  classifyFilesByPurpose,
+  isAllowedClassificationRole,
+  type AllowedClassificationRole,
+} from "@/lib/ai/classification-core";
+import { classificationModel } from "@/lib/ai/client";
 import type { Database } from "@/lib/supabase/database.types";
 import type { FileRole, ParsedFile } from "@/parser/types";
 
 const promptVersion = "file-role-v1";
-const allowedRoles = [
-  "service",
-  "repository",
-  "model",
-  "util",
-  "config",
-  "component",
-  "hook",
-] as const;
-
-type AllowedRole = (typeof allowedRoles)[number];
 
 export const classifyFallbackFiles = traceable(
   async function classifyFallbackFiles(
@@ -45,9 +39,11 @@ export const classifyFallbackFiles = traceable(
     );
     if (cacheError) throw cacheError;
 
-    const classifications = new Map<string, AllowedRole>();
+    const classifications = new Map<string, AllowedClassificationRole>();
     for (const item of cached) {
-      if (isAllowedRole(item.role)) classifications.set(item.content_hash, item.role);
+      if (isAllowedClassificationRole(item.role)) {
+        classifications.set(item.content_hash, item.role);
+      }
     }
 
     const missingByHash = new Map(
@@ -57,51 +53,7 @@ export const classifyFallbackFiles = traceable(
     );
     const missing = [...missingByHash.values()];
     if (missing.length > 0) {
-      const completion = await getAIClient().chat.completions.create({
-        model: classificationModel,
-        temperature: 0,
-        response_format: {
-          type: "json_schema",
-          json_schema: {
-            name: "file_roles",
-            strict: true,
-            schema: {
-              type: "object",
-              properties: {
-                files: {
-                  type: "array",
-                  items: {
-                    type: "object",
-                    properties: {
-                      path: { type: "string" },
-                      role: { type: "string", enum: allowedRoles },
-                    },
-                    required: ["path", "role"],
-                    additionalProperties: false,
-                  },
-                },
-              },
-              required: ["files"],
-              additionalProperties: false,
-            },
-          },
-        },
-        messages: [
-          {
-            role: "system",
-            content: `Classify each supplied file by its code, using exactly one of: ${allowedRoles.join(", ")}. These labels describe purpose only. Never use structural labels such as page, route, controller, layout, middleware, entry, or API. Return every supplied path exactly once.`,
-          },
-          {
-            role: "user",
-            content: JSON.stringify(
-              missing.map((file) => ({ path: file.path, content: file.content })),
-            ),
-          },
-        ],
-      });
-      const content = completion.choices[0]?.message.content;
-      if (!content) throw new Error("The model returned no file classifications");
-      const parsed = readClassifications(content, new Set(missing.map((file) => file.path)));
+      const parsed = await classifyFilesByPurpose(missing);
 
       const rows = missing.map((file) => ({
         organization_id: organizationId,
@@ -145,25 +97,3 @@ export const classifyFallbackFiles = traceable(
     },
   },
 );
-
-function readClassifications(content: string, expectedPaths: ReadonlySet<string>) {
-  const value: unknown = JSON.parse(content);
-  if (!value || typeof value !== "object" || !("files" in value) || !Array.isArray(value.files)) {
-    throw new Error("The model returned invalid file classifications");
-  }
-
-  const result = new Map<string, AllowedRole>();
-  for (const item of value.files) {
-    if (!item || typeof item !== "object" || !("path" in item) || !("role" in item)) continue;
-    if (typeof item.path !== "string" || !expectedPaths.has(item.path) || !isAllowedRole(item.role)) continue;
-    result.set(item.path, item.role);
-  }
-  if (result.size !== expectedPaths.size) {
-    throw new Error("The model did not classify every supplied file exactly once");
-  }
-  return result;
-}
-
-function isAllowedRole(value: unknown): value is AllowedRole {
-  return typeof value === "string" && (allowedRoles as readonly string[]).includes(value);
-}

@@ -103,13 +103,13 @@ export async function rerunAnalysis(formData: FormData): Promise<void> {
 
 export async function requestExplanation(
   analysisId: string,
-  target: ExplanationTarget,
+  target: unknown,
 ): Promise<ExplanationResult> {
   const authentication = await auth();
   if (!authentication.userId || !authentication.orgId) {
     return { status: "error", message: "Select an organization first" };
   }
-  if (!analysisId || !target.path || (target.kind !== "file" && target.kind !== "folder")) {
+  if (!analysisId || !isExplanationTarget(target)) {
     return { status: "error", message: "Invalid explanation target" };
   }
 
@@ -124,6 +124,16 @@ export async function requestExplanation(
     console.error("Explanation failed", error);
     return { status: "error", message: "Could not generate this explanation" };
   }
+}
+
+function isExplanationTarget(target: unknown): target is ExplanationTarget {
+  return target !== null &&
+    typeof target === "object" &&
+    "path" in target &&
+    typeof target.path === "string" &&
+    target.path.trim().length > 0 &&
+    "kind" in target &&
+    (target.kind === "file" || target.kind === "folder");
 }
 
 export async function inviteMember(

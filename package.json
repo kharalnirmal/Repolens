@@ -12,6 +12,9 @@
     "start": "next start",
     "lint": "eslint",
     "parse": "node --experimental-strip-types parser/cli.ts",
+    "eval:paths": "node --experimental-strip-types evals/invented-paths.ts",
+    "eval:roles": "node --experimental-strip-types evals/role-accuracy.ts",
+    "eval:prompts": "node --experimental-strip-types evals/prompt-versions.ts",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
