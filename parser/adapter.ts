@@ -21,7 +21,10 @@ export const adapters: readonly ParserAdapter[] = [
 ];
 
 export function selectAdapter(context: AdapterContext): ParserAdapter {
-  return adapters.find((adapter) => adapter.detect(context) !== null) ?? fallbackAdapter;
+  return (
+    adapters.find((adapter) => adapter.detect(context) !== null) ??
+    fallbackAdapter
+  );
 }
 
 export function genericRole(file: AdapterFile): string {

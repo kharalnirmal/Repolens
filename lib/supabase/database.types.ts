@@ -100,6 +100,20 @@ export type Database = {
         Update: never;
         Relationships: [];
       };
+      file_roles: {
+        Row: {
+          analysis_id: string;
+          created_at: string;
+          file_id: string;
+          id: string;
+          organization_id: string;
+          role: string;
+          source: string;
+        };
+        Insert: never;
+        Update: never;
+        Relationships: [];
+      };
       organizations: {
         Row: {
           created_at: string;
