@@ -1,10 +1,11 @@
-import { OrganizationSwitcher, UserButton } from "@clerk/nextjs";
 import { auth } from "@clerk/nextjs/server";
 import Link from "next/link";
 import { AnalysisRealtimeRefresh } from "@/components/analysis-realtime-refresh";
-import { InviteMemberForm } from "@/components/invite-member-form";
+import { DeleteRepositoryButton } from "@/components/delete-repository-button";
+import { LandingPage } from "@/components/landing-page";
 import { RepositoryForm } from "@/components/repository-form";
-import { ThemeControl } from "@/components/theme-control";
+import { Badge } from "@/components/ui/badge";
+import { WorkspaceHeader } from "@/components/workspace-header";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 
 const dateFormatter = new Intl.DateTimeFormat("en", {
@@ -27,11 +28,19 @@ function statusStyle(status: string) {
   }
 }
 
-export default async function WorkspacePage() {
-  await auth.protect();
+export default async function RootPage() {
   const authentication = await auth();
 
-  const { has, orgId, orgSlug } = authentication;
+  if (!authentication.userId) {
+    return <LandingPage />;
+  }
+
+  return <WorkspacePage />;
+}
+
+async function WorkspacePage() {
+  await auth.protect();
+  const authentication = await auth();
 
   const supabase = createServerSupabaseClient(authentication.getToken);
   const { data: analyses, error } = await supabase
@@ -44,6 +53,7 @@ export default async function WorkspacePage() {
         status_message,
         created_at,
         project:projects!analyses_organization_id_project_id_fkey (
+          id,
           repository_name,
           repository_url
         )
@@ -76,88 +86,48 @@ export default async function WorkspacePage() {
   const activeAnalysisIds = analyses
     .filter((analysis) => analysis.status === "queued" || analysis.status === "running")
     .map((analysis) => analysis.id);
+  const canDeleteRepositories = authentication.has({ role: "org:admin" });
 
   return (
     <div className="flex min-h-screen flex-col bg-background text-foreground">
-      <header className="flex min-h-14 flex-wrap items-center gap-3 border-b border-border bg-surface px-3 py-2 sm:px-5">
-        <div className="flex min-w-0 items-center gap-2.5">
-          <div className="grid size-7 shrink-0 place-items-center border border-foreground bg-foreground font-mono text-[9px] font-bold tracking-[-0.08em] text-surface">
-            RL
-          </div>
-          <span className="font-mono text-[13px] font-semibold tracking-[-0.03em]">
-            RepoLens
-          </span>
-          <span className="mx-1 hidden h-4 w-px bg-border sm:block" />
-          <OrganizationSwitcher
-            hidePersonal
-            afterCreateOrganizationUrl="/"
-            afterSelectOrganizationUrl="/"
-            afterLeaveOrganizationUrl="/"
-          />
-        </div>
-
-        <div className="ml-auto flex items-center gap-1.5">
-          {has({ role: "org:admin" }) ? <InviteMemberForm /> : null}
-          <ThemeControl />
-          <UserButton />
-        </div>
-      </header>
+      <WorkspaceHeader />
 
       <main className="flex flex-1 flex-col">
         <AnalysisRealtimeRefresh analysisIds={activeAnalysisIds} />
-        <div className="flex h-9 items-center border-b border-border bg-surface-muted px-3 font-mono text-[10px] text-muted sm:px-5">
-          <span>workspace</span>
-          <svg
-            aria-hidden="true"
-            viewBox="0 0 12 12"
-            className="mx-2 size-2.5 text-border"
-          >
-            <path d="m4 2 4 4-4 4" fill="none" stroke="currentColor" />
-          </svg>
-          <span className="truncate text-foreground">
-            {orgSlug ?? orgId ?? "No active organization"}
-          </span>
-        </div>
 
-        <section className="mx-auto flex w-full max-w-7xl flex-1 flex-col px-3 py-6 sm:px-5 sm:py-9">
-          <div className="mb-6 flex items-end justify-between gap-4 sm:mb-8">
+        <section className="mx-auto flex w-full max-w-[1180px] flex-1 flex-col px-4 py-8 sm:px-6 sm:py-12">
+          <div className="mb-7 flex flex-col gap-5 sm:flex-row sm:items-end sm:justify-between">
             <div>
-              <h1 className="text-xl font-semibold tracking-[-0.035em] sm:text-2xl">
+              <h1 className="font-heading text-2xl font-semibold tracking-[-0.045em] sm:text-[2rem]">
                 Repository analyses
               </h1>
-              <p className="mt-1.5 max-w-lg text-xs leading-5 text-muted">
-                Parsed repositories and the current state of each analysis run.
+              <p className="mt-2 max-w-lg text-sm leading-6 text-muted-foreground">
+                Map a public repository, then inspect every connection the parser can prove.
               </p>
             </div>
-            <span className="hidden font-mono text-[10px] text-muted sm:block">
-              latest 50 records
-            </span>
+            <dl className="flex flex-wrap items-baseline gap-x-5 gap-y-2 text-xs text-muted-foreground">
+              {summary.map((item) => (
+                <div key={item.label} className="flex items-baseline gap-1.5 whitespace-nowrap">
+                  <dd className="font-mono text-sm font-semibold tabular-nums text-foreground">{item.value}</dd>
+                  <dt>{item.label.toLowerCase()}</dt>
+                </div>
+              ))}
+            </dl>
           </div>
 
-          <div className="mb-3">
+          <div className="mb-9">
             <RepositoryForm />
           </div>
 
-          <dl className="mb-3 grid grid-cols-2 border-l border-t border-border sm:grid-cols-4">
-            {summary.map((item) => (
-              <div
-                key={item.label}
-                className="flex min-h-20 flex-col justify-between border-b border-r border-border bg-surface p-3 sm:min-h-24 sm:p-4"
-              >
-                <dt className="font-mono text-[10px] text-muted">
-                  {item.label}
-                </dt>
-                <dd className="font-mono text-2xl font-medium tracking-[-0.06em] sm:text-3xl">
-                  {String(item.value).padStart(2, "0")}
-                </dd>
-              </div>
-            ))}
-          </dl>
+          <div className="mb-3 flex items-baseline justify-between gap-4">
+            <h2 className="border-l-2 border-foreground pl-3 font-heading text-lg font-semibold tracking-[-0.025em]">Recent analyses</h2>
+            <span className="text-sm text-muted-foreground">Latest 50 runs</span>
+          </div>
 
           {analyses.length === 0 ? (
-            <div className="grid min-h-64 flex-1 place-items-center border border-border bg-surface px-6 py-12 text-center">
+            <div className="grid min-h-72 flex-1 place-items-center px-6 py-12 text-center">
               <div className="max-w-xs">
-                <div className="mx-auto mb-5 grid size-10 place-items-center border border-border bg-surface-muted">
+                <div className="mx-auto mb-5 grid size-10 place-items-center rounded-full bg-imports/10 text-imports">
                   <svg
                     aria-hidden="true"
                     viewBox="0 0 24 24"
@@ -171,62 +141,74 @@ export default async function WorkspacePage() {
                     />
                   </svg>
                 </div>
-                <h2 className="text-sm font-semibold">No analyses yet</h2>
-                <p className="mt-2 text-xs leading-5 text-muted">
-                  Repository runs for this workspace will appear here.
+                <h2 className="text-sm font-semibold">Map your first repository</h2>
+                <p className="mt-2 text-xs leading-5 text-muted-foreground">
+                  Paste a public GitHub URL above. Its analysis will appear here as soon as parsing starts.
                 </p>
               </div>
             </div>
           ) : (
-            <div className="overflow-hidden border border-border bg-surface">
-              <div className="hidden grid-cols-[2.75rem_minmax(0,1fr)_10rem_11rem] border-b border-border bg-surface-muted font-mono text-[10px] text-muted sm:grid">
-                <span className="border-r border-border px-3 py-2.5">#</span>
-                <span className="px-3 py-2.5">Repository</span>
-                <span className="px-3 py-2.5">State</span>
-                <span className="px-3 py-2.5">Created</span>
+            <div>
+              <div className={`hidden rounded-md bg-surface-muted/65 text-sm font-semibold tracking-[-0.015em] text-foreground sm:grid ${canDeleteRepositories ? "grid-cols-[minmax(0,1fr)_12rem_13rem_3.5rem]" : "grid-cols-[minmax(0,1fr)_12rem_13rem]"}`}>
+                <span className="py-4 pl-4 pr-5">Repository</span>
+                <span className="px-5 py-4">State</span>
+                <span className="py-4 pl-5">Created</span>
+                {canDeleteRepositories ? <span className="sr-only">Actions</span> : null}
               </div>
-              <ul>
-                {analyses.map((analysis, index) => {
+              <ul className="mt-1 space-y-1">
+                {analyses.map((analysis) => {
                   const status = statusStyle(analysis.status);
 
                   return (
                     <li
                       key={analysis.id}
-                      className="group border-b border-border last:border-b-0"
+                      className={`group rounded-md transition-colors hover:bg-surface-muted/55 focus-within:bg-surface-muted motion-reduce:transition-none ${canDeleteRepositories ? "grid grid-cols-[minmax(0,1fr)_3.5rem]" : "block"}`}
                     >
                       <Link
                         href={`/analyses/${analysis.id}`}
-                        className="grid gap-3 px-3 py-3.5 outline-none hover:bg-surface-muted focus-visible:bg-surface-muted sm:grid-cols-[2.75rem_minmax(0,1fr)_10rem_11rem] sm:items-center sm:gap-0 sm:p-0"
+                        className="grid min-w-0 grid-cols-2 rounded-md outline-none sm:grid-cols-[minmax(0,1fr)_12rem_13rem] sm:items-center"
                       >
-                        <span className="hidden self-stretch border-r border-border px-3 py-4 font-mono text-[10px] text-muted sm:block">
-                          {String(index + 1).padStart(2, "0")}
-                        </span>
-                        <div className="min-w-0 sm:px-3 sm:py-3.5">
-                          <p className="truncate font-mono text-[11px] font-semibold">
+                        <div className="col-span-2 min-w-0 px-4 py-5 sm:col-span-1">
+                          <span className="mb-2 block text-sm font-semibold text-foreground sm:hidden">Repository</span>
+                          <p className="truncate text-base font-semibold tracking-[-0.015em]">
                             {analysis.project.repository_name}
                           </p>
-                          <p className="mt-1.5 truncate font-mono text-[10px] text-muted">
+                          <p className="mt-1.5 truncate font-mono text-xs text-muted-foreground">
                             {analysis.project.repository_url}
                           </p>
                         </div>
-                        <div className="flex items-center sm:block sm:px-3 sm:py-3.5">
-                          <span className="inline-flex items-center gap-2 font-mono text-[10px]">
+                        <div className="pb-5 pr-3 sm:px-5 sm:py-5">
+                          <span className="mb-2 block text-sm font-semibold text-foreground sm:hidden">State</span>
+                          <Badge
+                            variant="outline"
+                            className="h-6 rounded-full bg-background px-2.5 text-[13px] font-medium"
+                          >
                             <span className={`size-1.5 ${status.dot}`} />
                             <span className={status.text}>{analysis.status}</span>
-                          </span>
+                          </Badge>
                           {analysis.stage ? (
-                            <p className="ml-2 truncate font-mono text-[10px] text-muted sm:ml-3.5 sm:mt-1">
+                            <p className="mt-1.5 truncate text-xs text-muted-foreground">
                               {analysis.stage}
                             </p>
                           ) : null}
                         </div>
-                        <time
-                          dateTime={analysis.created_at}
-                          className="font-mono text-[10px] text-muted sm:px-3 sm:py-3.5"
-                        >
-                          {dateFormatter.format(new Date(analysis.created_at))}
-                        </time>
+                        <div className="pb-5 pl-3 sm:py-5 sm:pl-5">
+                          <span className="mb-2 block text-sm font-semibold text-foreground sm:hidden">Created</span>
+                          <time dateTime={analysis.created_at} className="font-mono text-xs leading-5 text-foreground">
+                            {dateFormatter.format(new Date(analysis.created_at))}
+                          </time>
+                        </div>
                       </Link>
+                      {canDeleteRepositories ? (
+                        <div className="grid place-items-center">
+                          {analysis.status === "running" || analysis.status === "completed" || analysis.status === "failed" ? (
+                            <DeleteRepositoryButton
+                              projectId={analysis.project.id}
+                              repositoryName={analysis.project.repository_name}
+                            />
+                          ) : null}
+                        </div>
+                      ) : null}
                     </li>
                   );
                 })}

@@ -16,7 +16,18 @@ NEXT_PUBLIC_CLERK_SIGN_IN_FALLBACK_REDIRECT_URL=/
 NEXT_PUBLIC_CLERK_SIGN_UP_FALLBACK_REDIRECT_URL=/
 NEXT_PUBLIC_SUPABASE_URL=
 NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=
+REPOLENS_AGENT_CREDENTIAL_SECRET=
+REPOLENS_AGENT_URL=
+LANGSMITH_API_KEY=
 ```
+
+Generate `REPOLENS_AGENT_CREDENTIAL_SECRET` with `openssl rand -base64 32`. It
+signs and encrypts five-minute credentials delegated to the standalone agent.
+
+`REPOLENS_AGENT_URL` is the agent server URL from the `repolens-agent`
+project (`mda dev` or `mda deploy`). `LANGSMITH_API_KEY` also authenticates
+the app to that server. Until both are set, Ask reports the agent as
+unreachable and the map keeps working.
 
 In Clerk, enable Organizations and configure:
 

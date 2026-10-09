@@ -1,0 +1,183 @@
+# RepoLens agent
+
+A standalone Managed Deep Agent that answers questions from RepoLens's parsed
+repository graph. It does not read the RepoLens database directly.
+
+The application passes a short-lived, analysis-scoped credential as runtime
+context. Each of the six tools forwards that credential to the application's
+read-only tool API. The analysis and organization identifiers remain inside the
+credential and are never exposed as model arguments.
+
+## Project structure
+
+```text
+repolens-agent/
+  agent.ts         # defineDeepAgent(...) — required `name` is the deploy id
+  instructions.md  # always-loaded system prompt
+  package.json     # project dependencies
+  .env             # API keys (LangSmith + model providers); never commit
+  identity.ts      # managed authentication
+  tools/           # six read-only RepoLens graph tools
+  middleware/      # optional middleware
+  skills/          # optional skills synced to Context Hub
+  tools/mcp.ts     # optional MCP server declaration
+```
+
+## Install
+
+```bash
+npm install
+```
+
+## Evaluate
+
+From the project root, initialize the Harbor eval workspace:
+
+```bash
+mda evals init -i
+```
+
+Follow the coding-agent prompt to author tasks directly under `evals/<task>/`. The CLI
+creates `evals/harbor-job.json` once and preserves your edits; `.mda/evals/` is generated.
+
+A task may include an authored `evals/<task>/identity.json` fixture. It requires a
+non-empty `user.id`; `user.kind`, `user.email`, and top-level `groups`, `claims`, and
+`source.provider` are optional. Keep the fixture with the task, not in generated
+`.mda/evals/`.
+
+Running evals requires `uv` and Docker. Export `LANGSMITH_API_KEY`,
+`LANGSMITH_WORKSPACE_ID` when your credentials require it, and the model or tool
+credential variables used by the agent. Then run the pinned two-plugin Harbor command
+included at the end of the coding-agent prompt from the project root. It uses POSIX
+syntax on macOS/Linux and PowerShell on native Windows. `MDAJobPlugin` compiles a fresh
+eval artifact at every Harbor job start. From the same project root, inspect results:
+
+```bash
+uv run --python 3.12 --with 'harbor[langsmith]==0.21.0' harbor view .mda/evals/jobs
+```
+
+This POC keeps MDA's custom Harbor adapter. Migration to Harbor's built-in LangGraph
+agent is deferred.
+
+## Develop
+
+Copy `.env.example` to `.env` and provide `LANGSMITH_API_KEY`, `GOOGLE_API_KEY`,
+and the RepoLens application origin in `REPOLENS_API_URL`.
+
+Run the compiled app on the local LangGraph dev server:
+
+```bash
+npm run dev
+```
+
+The launcher stages the MDA build and keeps it synchronized while LangGraph is
+running. It also avoids an upstream Windows `npx.cmd` resolution bug in MDA
+`0.9.1-dev.1`.
+
+The caller must include this runtime context on every run:
+
+```json
+{
+  "analysisCredential": "<short-lived signed credential>"
+}
+```
+
+The application mints that value for an authenticated organization member with:
+
+```text
+POST /api/analyses/:analysisId/agent-credential
+```
+
+The response contains `credential` and `expiresAt`. The credential expires after
+at most five minutes and cannot outlive the delegated Clerk session token.
+
+The tools call these application-owned endpoints:
+
+```text
+POST /api/agent/tools/summary
+POST /api/agent/tools/search-files
+POST /api/agent/tools/files-by-role
+POST /api/agent/tools/neighbors
+POST /api/agent/tools/walk
+POST /api/agent/tools/routes
+```
+
+## Identity
+
+`identity.ts` enables managed authentication: threads are owned
+per caller. Set `auth` to one or more `auth.*` entries if browsers call
+the deployment directly. Durable memory is declared separately.
+
+## Memory
+
+This project declares no memory, so nothing is kept between runs. Add
+`memory.ts` exporting `defineMemory({ agent: memoryLayer() })` to mount one deployment-shared tree
+at `/memories/agent/`.
+
+## Sandbox
+
+This project has no sandbox: MDA only provisions one when a declaration
+is present. Add `sandbox/index.ts` to give the agent a managed execution
+environment with a filesystem and a shell.
+
+## Optional Runtime Pieces
+
+Add `tools/mcp.ts` to attach MCP servers. The file must expose a named `mcp`
+declaration.
+
+## Deploy
+
+Compile and deploy the project to LangSmith:
+
+```bash
+mda deploy
+```
+
+This copies your files verbatim, generates a managed entry module, and writes a
+deployable build (including `langgraph.json`) to `.mda/build`. The CLI uploads
+that build to LangSmith to run your agent on the managed runtime.
+
+Common options:
+
+```bash
+mda deploy --name repolens-agent-dev --deployment-type dev
+mda deploy --workspace-id "$LANGSMITH_WORKSPACE_ID"
+mda deploy --no-wait
+```
+
+Deploy prints both the Agent Server URL to call and the LangSmith dashboard URL
+to inspect.
+
+## Logs
+
+Read the deployed agent's server logs:
+
+```bash
+mda logs
+mda logs --lines 200 --level error
+```
+
+In a terminal this streams new output until you press Ctrl-C. When the output is
+piped or redirected it prints the most recent lines (1000 by default) and exits.
+
+## Delete
+
+Remove the deployment and the LangSmith resources it created:
+
+```bash
+mda delete
+```
+
+This deletes the deployment, the tracing project created alongside it, the
+Context Hub repo holding this agent's context and memory, and the managed
+sandboxes this agent created. It asks first; pass `--yes` to skip the prompt.
+Agent memory and thread history are not recoverable afterwards.
+
+## Environment
+
+`mda deploy` loads `.env`, uses `LANGSMITH_API_KEY` for LangSmith, and forwards
+model provider keys such as `OPENAI_API_KEY` or `ANTHROPIC_API_KEY` as deployment
+secrets. Provider keys must be in `.env` or configured as LangSmith workspace
+secrets — a value exported in your shell is not read. Set
+`LANGSMITH_WORKSPACE_ID` or pass `--workspace-id` if your LangSmith API key
+requires a workspace selection.

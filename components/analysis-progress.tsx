@@ -4,6 +4,7 @@ import { useAuth } from "@clerk/nextjs";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { createBrowserSupabaseClient } from "@/lib/supabase/browser";
 
 const stages = [
@@ -87,22 +88,22 @@ export function AnalysisProgress({
   const isFailed = progress.status === "failed";
 
   return (
-    <div className="border border-border bg-surface">
-      <div className="flex min-h-10 items-center justify-between gap-4 border-b border-border bg-surface-muted px-3">
-        <p className="font-mono text-[10px] text-muted">
+    <div>
+      <div className="flex items-center justify-between gap-4">
+        <p className="text-base font-medium">
           {progress.message ?? "Waiting to start"}
         </p>
-        <span className="inline-flex shrink-0 items-center gap-2 font-mono text-[9px] text-muted">
+        <span className="flex shrink-0 items-center gap-2 text-xs font-semibold text-muted-foreground">
           <span
-            className={`size-1.5 ${
-              isFailed ? "bg-red-500" : connected ? "bg-emerald-500" : "bg-amber-500"
+            className={`size-2 rounded-full ${
+              isFailed ? "bg-destructive" : connected ? "bg-imports" : "bg-muted-foreground"
             }`}
           />
           {isFailed ? "failed" : connected ? "live" : "connecting"}
         </span>
       </div>
 
-      <ol aria-label="Analysis stages">
+      <ol aria-label="Analysis stages" className="mt-8">
         {stages.map((stage, index) => {
           const done = isComplete || index < currentStageIndex;
           const active = !isComplete && index === currentStageIndex;
@@ -111,25 +112,38 @@ export function AnalysisProgress({
           return (
             <li
               key={stage.key}
-              className="grid grid-cols-[2.75rem_minmax(0,1fr)_5rem] border-b border-border last:border-b-0"
+              className="relative grid grid-cols-[1.5rem_minmax(0,1fr)_4.5rem] gap-x-4 pb-7 last:pb-0"
             >
-              <span className="grid min-h-16 place-items-center border-r border-border font-mono text-[10px] text-muted">
-                {String(index + 1).padStart(2, "0")}
+              {index < stages.length - 1 ? (
+                <span aria-hidden="true" className="absolute bottom-0 left-[11px] top-6 w-px bg-border" />
+              ) : null}
+              <span
+                className={`relative z-10 grid size-6 place-items-center rounded-full border font-mono text-[9px] ${
+                  failed
+                    ? "border-destructive text-destructive"
+                    : done
+                      ? "border-foreground bg-foreground text-background"
+                      : active
+                        ? "border-imports text-imports"
+                        : "border-border bg-background text-muted-foreground"
+                }`}
+              >
+                {index + 1}
               </span>
-              <div className="min-w-0 px-3 py-3">
-                <p className="font-mono text-[11px] font-semibold">{stage.label}</p>
-                <p className="mt-1 text-[10px] leading-4 text-muted">{stage.detail}</p>
+              <div className="min-w-0 pt-0.5">
+                <p className="text-sm font-semibold">{stage.label}</p>
+                <p className="mt-1 text-xs leading-5 text-muted-foreground">{stage.detail}</p>
               </div>
-              <div className="flex items-center justify-end px-3 font-mono text-[9px]">
+              <div className="pt-0.5 text-right text-xs font-semibold">
                 <span
                   className={
                     failed
-                      ? "text-red-700 dark:text-red-400"
+                      ? "text-destructive"
                       : done
-                        ? "text-emerald-700 dark:text-emerald-400"
+                        ? "text-foreground"
                         : active
-                          ? "text-amber-700 dark:text-amber-400"
-                          : "text-muted"
+                          ? "text-imports"
+                          : "text-muted-foreground"
                   }
                 >
                   {failed ? "failed" : done ? "done" : active ? "running" : "waiting"}
@@ -141,14 +155,17 @@ export function AnalysisProgress({
       </ol>
 
       {progress.error ? (
-        <div className="border-t border-red-300 bg-red-50 px-3 py-3 dark:border-red-900 dark:bg-red-950/30">
-          <p className="font-mono text-[9px] text-red-700 dark:text-red-400">
+        <Alert
+          variant="destructive"
+          className="mt-4 gap-0.5 rounded-md border-destructive/25 bg-destructive/5 px-3 py-3"
+        >
+          <AlertTitle className="text-xs font-semibold text-destructive">
             Failure detail
-          </p>
-          <p className="mt-1.5 break-words font-mono text-[10px] leading-4 text-red-800 dark:text-red-300">
+          </AlertTitle>
+          <AlertDescription className="mt-1 break-words font-mono text-xs leading-5 text-destructive">
             {progress.error}
-          </p>
-        </div>
+          </AlertDescription>
+        </Alert>
       ) : null}
     </div>
   );

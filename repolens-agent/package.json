@@ -1,0 +1,18 @@
+{
+  "name": "repolens-agent",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "The standalone Managed Deep Agent for RepoLens repository questions.",
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "build": "mda build",
+    "dev": "node scripts/dev.mjs"
+  },
+  "dependencies": {
+    "managed-deepagents": "0.9.1-dev.1"
+  },
+  "devDependencies": {
+    "@types/node": "^26.1.1"
+  }
+}

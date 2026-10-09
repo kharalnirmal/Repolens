@@ -7,6 +7,7 @@ import {
   BackgroundVariant,
   Controls,
   Handle,
+  MarkerType,
   Position,
   ReactFlow,
   ReactFlowProvider,
@@ -18,10 +19,34 @@ import {
   type NodeProps,
 } from "@xyflow/react";
 import { Graph, layout } from "@dagrejs/dagre";
+import {
+  FolderTree,
+  LayoutDashboard,
+  MessageSquareText,
+  Sparkles,
+} from "lucide-react";
 import { useCallback, useEffect, useMemo, useState, useTransition } from "react";
 
 import { requestExplanation, rerunAnalysis } from "@/app/actions";
-import { ThemeControl } from "@/components/theme-control";
+import { AskPanel } from "@/components/ask-panel";
+import { Alert } from "@/components/ui/alert";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from "@/components/ui/collapsible";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { WorkspaceHeader } from "@/components/workspace-header";
 import type { ExplanationResult, ExplanationTarget } from "@/lib/ai/explain";
 import {
   insightSentences,
@@ -60,8 +85,10 @@ type Selection =
   | { kind: "node"; id: string }
   | { kind: "file"; path: string }
   | null;
+type HoveredSelection = Exclude<Selection, null> & { source: "canvas" | "detail" };
 
 type DetailTab = "structure" | "explanation";
+type PaneMode = "overview" | "ask";
 
 interface ModuleNodeData extends Record<string, unknown> {
   folderNode: FoldedNode;
@@ -112,12 +139,18 @@ function Canvas({
 }: AnalysisCanvasProps) {
   const [expandedIds, setExpandedIds] = useState<Set<string>>(() => new Set());
   const [selection, setSelection] = useState<Selection>(null);
-  const [hovered, setHovered] = useState<Exclude<Selection, null> | null>(null);
+  const [hovered, setHovered] = useState<HoveredSelection | null>(null);
   const [detailTab, setDetailTab] = useState<DetailTab>("structure");
+  const [paneMode, setPaneMode] = useState<PaneMode>("overview");
   const [activeRole, setActiveRole] = useState<string | null>(null);
   const [refitVersion, setRefitVersion] = useState(0);
   const [explanations, setExplanations] = useState<Record<string, ExplanationResult>>({});
   const { fitView, getZoom } = useReactFlow<ModuleFlowNode, DependencyFlowEdge>();
+  const fileCount = Object.keys(graph.fileToNode).length;
+  const displayedCategories = categories.map((category) => ({
+    ...category,
+    label: category.role === "source" ? "Other" : category.label,
+  }));
 
   const closeNode = useCallback((id: string): void => {
     setExpandedIds((current) => {
@@ -143,10 +176,13 @@ function Canvas({
   }, [expandedIds, graph.fileToNode]);
 
   const hoverFile = useCallback((path: string | null): void => {
-    setHovered(path === null ? null : { kind: "file", path });
+    setHovered(path === null ? null : { kind: "file", path, source: "canvas" });
   }, []);
   const hoverNode = useCallback((id: string | null): void => {
-    setHovered(id === null ? null : { kind: "node", id });
+    setHovered(id === null ? null : { kind: "node", id, source: "canvas" });
+  }, []);
+  const hoverDetail = useCallback((target: Exclude<Selection, null> | null): void => {
+    setHovered(target === null ? null : { ...target, source: "detail" });
   }, []);
 
   const visualEdges = useMemo(
@@ -222,44 +258,62 @@ function Canvas({
     ],
   );
   const hoveredFile = hovered?.kind === "file" ? hovered.path : null;
+  const externallyHoveredFile = hovered?.source === "detail" ? hoveredFile : null;
   const nodes = useMemo<ModuleFlowNode[]>(() => {
-    if (hoveredFile === null) return baseNodes;
+    if (externallyHoveredFile === null) return baseNodes;
 
-    const nodeId = graph.fileToNode[hoveredFile];
+    const nodeId = graph.fileToNode[externallyHoveredFile];
     return baseNodes.map((node) =>
       node.id === nodeId
-        ? { ...node, data: { ...node.data, hoveredFile } }
+        ? { ...node, data: { ...node.data, hoveredFile: externallyHoveredFile } }
         : node,
     );
-  }, [baseNodes, graph.fileToNode, hoveredFile]);
+  }, [baseNodes, externallyHoveredFile, graph.fileToNode]);
 
   const edges = useMemo<DependencyFlowEdge[]>(
     () => visualEdges.map((edge) => {
       const direction = active.edgeDirections.get(edge.id);
+      const markerAtSource = direction === undefined || direction === "incoming";
       const stroke =
         direction === "incoming"
           ? "var(--imported-by)"
           : direction === "outgoing"
             ? "var(--imports)"
             : direction === "both"
-              ? "var(--accent)"
-              : "var(--muted)";
+              ? "var(--imports)"
+              : "var(--muted-foreground)";
 
       return {
         ...edge,
-        type: "smoothstep",
+        type: "default",
         animated: false,
         selectable: false,
+        zIndex: active.edgeIds.has(edge.id) ? 2 : 1,
+        markerStart: markerAtSource ? {
+          type: MarkerType.ArrowClosed,
+          color: stroke,
+          width: active.edgeIds.has(edge.id) ? 16 : 13,
+          height: active.edgeIds.has(edge.id) ? 16 : 13,
+        } : undefined,
+        markerEnd: markerAtSource ? undefined : {
+          type: MarkerType.ArrowClosed,
+          color: stroke,
+          width: active.edgeIds.has(edge.id) ? 16 : 13,
+          height: active.edgeIds.has(edge.id) ? 16 : 13,
+        },
+        pathOptions: { curvature: edgeCurvature(edge.id, edge.source === edge.target) },
         style: {
           stroke,
-          strokeWidth: active.edgeIds.has(edge.id) ? 1.5 : 1,
+          strokeWidth: active.edgeIds.has(edge.id) ? 2 : 1,
+          strokeLinecap: "round",
+          strokeLinejoin: "round",
           opacity:
             activeRole !== null
               ? edgeMatchesRole(graph, edge, activeRole)
-                ? 0.32
+                ? 0.45
                 : 0.04
               : selection === null
-                ? 0.32
+                ? 0.38
                 : active.edgeIds.has(edge.id)
                   ? 0.9
                   : 0.06,
@@ -288,91 +342,81 @@ function Canvas({
 
   return (
     <div className="flex h-dvh min-h-96 flex-col overflow-hidden bg-background text-foreground">
-      <header className="flex h-11 shrink-0 items-center border-b border-border bg-surface px-3">
-        <div className="flex min-w-0 items-center gap-2.5">
-          <div className="grid size-6 shrink-0 place-items-center border border-foreground bg-foreground font-mono text-[8px] font-bold tracking-[-0.08em] text-surface">
-            RL
-          </div>
-          <span className="text-xs font-semibold tracking-[-0.03em]">
-            RepoLens
-          </span>
-          <span className="h-4 w-px bg-border" />
-          <span className="truncate font-mono text-[10px] text-muted">
-            {repositoryName}
-          </span>
-        </div>
-        <div className="ml-auto flex items-center gap-3">
-          {!tracingConfigured ? (
-            <span className="border border-border px-1.5 py-0.5 font-mono text-[8px] text-muted">
-              Tracing off
-            </span>
-          ) : null}
-          <div className="hidden items-center gap-3 font-mono text-[9px] text-muted sm:flex">
-            <span>{graph.nodes.length} modules</span>
-            <span>{Object.keys(graph.fileToNode).length} files</span>
-            <span>fold {graph.threshold}</span>
-          </div>
-          <ThemeControl />
-        </div>
-      </header>
+      <WorkspaceHeader projectName={repositoryName} />
 
       <div className="grid min-h-0 flex-1 grid-cols-[3rem_minmax(18rem,1fr)_18rem] overflow-x-auto md:grid-cols-[11rem_minmax(18rem,1fr)_18rem]">
         <aside
           aria-label="File categories"
-          className="tool-scrollbar min-h-0 overflow-y-auto border-r border-border bg-surface"
+          className="tool-scrollbar min-h-0 overflow-y-auto border-r border-border bg-background"
         >
-          <div className="flex h-9 items-center justify-center border-b border-border px-3 md:justify-start">
-            <span className="text-[9px] font-semibold text-muted">
+          <div className="flex h-11 items-center justify-center px-3 md:justify-start">
+            <span className="text-[10px] font-semibold text-muted-foreground">
               <span className="md:hidden">F</span>
               <span className="hidden md:inline">File roles</span>
             </span>
           </div>
-          <div className="hidden py-1.5 md:block">
-            {categories.map((category) => (
+          <div className="hidden space-y-1 px-2 pb-3 md:block">
+            <button
+              aria-pressed={activeRole === null}
+              className={`grid w-full grid-cols-[8px_1fr_auto] items-center gap-2 rounded-md border px-2.5 py-2 text-left text-[11px] outline-none focus-visible:ring-2 focus-visible:ring-imports ${
+                activeRole === null
+                  ? "border-border bg-surface-muted font-semibold text-foreground"
+                  : "border-transparent text-muted-foreground hover:border-border hover:bg-surface-muted hover:text-foreground"
+              }`}
+              onClick={() => setActiveRole(null)}
+              type="button"
+            >
+              <span className="size-2 rounded-sm bg-foreground" />
+              <span>All</span>
+              <span className="text-muted-foreground">{fileCount}</span>
+            </button>
+            {displayedCategories.map((category) => (
               <button
                 aria-pressed={activeRole === category.role}
-                className={`grid w-full grid-cols-[8px_1fr_auto] items-center gap-2 border-l-2 px-2.5 py-1.5 text-left text-[10px] focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-accent ${
+                className={`grid w-full grid-cols-[8px_1fr_auto] items-center gap-2 rounded-md border px-2.5 py-2 text-left text-[11px] outline-none focus-visible:ring-2 focus-visible:ring-imports ${
                   activeRole === category.role
-                    ? "border-l-accent bg-surface-muted font-semibold text-foreground"
-                    : activeRole === null
-                      ? "border-l-transparent hover:bg-surface-muted"
-                      : "border-l-transparent text-muted hover:bg-surface-muted hover:text-foreground"
+                    ? "border-border bg-surface-muted font-semibold text-foreground"
+                    : "border-transparent text-muted-foreground hover:border-border hover:bg-surface-muted hover:text-foreground"
                 }`}
                 key={category.role}
-                onClick={() =>
-                  setActiveRole((current) =>
-                    current === category.role ? null : category.role,
-                  )
-                }
+                onClick={() => setActiveRole(category.role)}
                 type="button"
               >
                 <span
-                  className="size-2"
+                  className="size-2 rounded-sm"
                   style={{ backgroundColor: category.color }}
                 />
                 <span>{category.label}</span>
-                <span className="tabular-nums text-muted">{category.count}</span>
+                <span className="tabular-nums text-muted-foreground">{category.count}</span>
               </button>
             ))}
           </div>
           <div className="flex flex-col items-center gap-2 py-3 md:hidden">
-            {categories.map((category) => (
+            <button
+              aria-label={`All: ${fileCount} files`}
+              aria-pressed={activeRole === null}
+              className={`grid size-6 place-items-center rounded-md border text-[9px] font-semibold outline-none focus-visible:ring-2 focus-visible:ring-imports ${
+                activeRole === null ? "border-foreground" : "border-transparent"
+              }`}
+              onClick={() => setActiveRole(null)}
+              title={`All: ${fileCount}`}
+              type="button"
+            >
+              A
+            </button>
+            {displayedCategories.map((category) => (
               <button
                 aria-label={`${category.label}: ${category.count} files`}
                 aria-pressed={activeRole === category.role}
-                className={`size-5 border focus-visible:outline-2 focus-visible:outline-accent ${
+                className={`grid size-6 place-items-center rounded-md border outline-none focus-visible:ring-2 focus-visible:ring-imports ${
                   activeRole === category.role ? "border-foreground" : "border-transparent"
                 }`}
                 key={category.role}
-                onClick={() =>
-                  setActiveRole((current) =>
-                    current === category.role ? null : category.role,
-                  )
-                }
+                onClick={() => setActiveRole(category.role)}
                 title={`${category.label}: ${category.count}`}
                 type="button"
               >
-                <span className="mx-auto block size-2" style={{ backgroundColor: category.color }} />
+                <span className="block size-2 rounded-sm" style={{ backgroundColor: category.color }} />
               </button>
             ))}
           </div>
@@ -414,44 +458,88 @@ function Canvas({
             <Controls
               position="bottom-right"
               showInteractive={false}
-              className="!overflow-hidden !rounded-none !border !border-border !bg-surface !shadow-none [&_button]:!border-border [&_button]:!bg-surface [&_button]:!fill-foreground"
+              className="!overflow-hidden !rounded-md !border !border-border !bg-surface !shadow-none [&_button]:!border-border [&_button]:!bg-surface [&_button]:!fill-foreground"
             />
           </ReactFlow>
-          <div className="pointer-events-none absolute left-3 top-3 flex items-center gap-3 border border-border bg-surface/95 px-2 py-1 font-mono text-[9px] text-muted">
-            <span className="flex items-center gap-1.5">
-              <span className="size-1.5 bg-imports" />
-              Imports →
-            </span>
-            <span className="flex items-center gap-1.5">
-              <span className="size-1.5 bg-imported-by" />
-              ← Imported by
-            </span>
+          <div className="pointer-events-none absolute left-3 top-3 rounded-md border border-border bg-background/90 px-2.5 py-2 font-mono text-[10px] shadow-sm backdrop-blur-sm">
+            <p className="mb-1.5 text-muted-foreground">Arrow flows from importer to imported file</p>
+            <div className="flex items-center gap-3">
+              <span className="flex items-center gap-1.5 text-imported-by">
+                <svg aria-hidden="true" className="h-2 w-5" viewBox="0 0 20 8">
+                  <path d="M19 4 H2 M5 1 L2 4 L5 7" fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" />
+                </svg>
+                Incoming imports
+              </span>
+              <span className="flex items-center gap-1.5 text-imports">
+                <svg aria-hidden="true" className="h-2 w-5" viewBox="0 0 20 8">
+                  <path d="M1 4 H18 M15 1 L18 4 L15 7" fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" />
+                </svg>
+                Outgoing imports
+              </span>
+            </div>
+            {!tracingConfigured ? (
+              <p className="mt-1.5 border-t border-border pt-1.5 text-muted-foreground">Tracing off</p>
+            ) : null}
           </div>
         </main>
 
         <aside
           aria-label="Details"
-          className="flex min-h-0 flex-col border-l border-border bg-surface"
+           className="flex min-h-0 flex-col border-l border-border bg-background"
         >
-          <DetailPane
-            analysisId={analysisId}
-            activeTab={detailTab}
-            framework={framework}
-            graph={graph}
-            hovered={hovered}
-            insights={insights}
-            repositoryName={repositoryName}
-            routes={routes}
-            selection={selection}
-            unidentifiedFileCount={unidentifiedFileCount}
-            explanations={explanations}
-            onHover={setHovered}
-            onSelectFile={selectFile}
-            onStoreExplanation={(key, explanation) =>
-              setExplanations((current) => ({ ...current, [key]: explanation }))
-            }
-            onTabChange={setDetailTab}
-          />
+          <Tabs
+            className="flex min-h-0 flex-1 gap-0"
+            value={paneMode}
+            onValueChange={(value) => {
+              if (value === "overview" || value === "ask") setPaneMode(value);
+            }}
+          >
+            <TabsList className="mx-3 mt-3 grid h-10 w-auto shrink-0 grid-cols-2 overflow-hidden rounded-md border border-border bg-surface-muted p-1.5">
+              {(["overview", "ask"] as const).map((mode) => (
+                <TabsTrigger
+                  className="h-auto min-h-0 min-w-0 self-stretch rounded-sm border-0 px-2 text-[11px] font-medium transition-none data-active:bg-background data-active:font-semibold data-active:shadow-none focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-accent dark:data-active:bg-surface"
+                  key={mode}
+                  value={mode}
+                >
+                  {mode === "overview" ? (
+                    <LayoutDashboard aria-hidden="true" className="size-3" />
+                  ) : (
+                    <MessageSquareText aria-hidden="true" className="size-3" />
+                  )}
+                  {mode === "overview" ? "Overview" : "Ask"}
+                </TabsTrigger>
+              ))}
+            </TabsList>
+            <TabsContent className="flex min-h-0 flex-1 flex-col" value="ask">
+              <AskPanel
+                analysisId={analysisId}
+                knownPaths={graph.fileToNode}
+                onSelectFile={selectFile}
+                selectedPath={selection?.kind === "file" ? selection.path : null}
+              />
+            </TabsContent>
+            <TabsContent className="flex min-h-0 flex-1 flex-col" value="overview">
+              <DetailPane
+                analysisId={analysisId}
+                activeTab={detailTab}
+                framework={framework}
+                graph={graph}
+                hovered={hovered}
+                insights={insights}
+                repositoryName={repositoryName}
+                routes={routes}
+                selection={selection}
+                unidentifiedFileCount={unidentifiedFileCount}
+                explanations={explanations}
+                onHover={hoverDetail}
+                onSelectFile={selectFile}
+                onStoreExplanation={(key, explanation) =>
+                  setExplanations((current) => ({ ...current, [key]: explanation }))
+                }
+                onTabChange={setDetailTab}
+              />
+            </TabsContent>
+          </Tabs>
         </aside>
       </div>
     </div>
@@ -509,43 +597,47 @@ function DetailPane({
     : null;
 
   return (
-    <>
-      <div className="flex h-9 shrink-0 items-center border-b border-border px-3">
-        <span className="min-w-0 truncate font-mono text-[9px] font-semibold" title={title}>
-          {title}
+    <Tabs
+      className="flex min-h-0 flex-1 gap-0"
+      value={activeTab}
+      onValueChange={(value) => {
+        if (value === "structure" || value === "explanation") onTabChange(value);
+      }}
+    >
+      <div className="flex min-h-12 shrink-0 items-center gap-2 border-b border-border px-4 py-2">
+        <span className="grid size-5 shrink-0 place-items-center rounded-sm bg-surface-muted text-muted-foreground">
+          <FolderTree aria-hidden="true" className="size-3" />
         </span>
+        <div className="min-w-0">
+          <p className="text-[8px] font-medium text-muted-foreground">
+            {selectedFile ? "Selected file" : selectedNode ? "Selected folder" : "Repository"}
+          </p>
+          <p className="truncate font-mono text-[10px] font-semibold" title={title}>
+            {title}
+          </p>
+        </div>
       </div>
-      <div className="grid h-8 shrink-0 grid-cols-2 border-b border-border" role="tablist">
+      <TabsList className="mx-3 mt-3 grid h-10 w-auto shrink-0 grid-cols-2 overflow-hidden rounded-md border border-border bg-surface-muted p-1.5">
         {(["structure", "explanation"] as const).map((tab) => (
-          <button
-            aria-selected={activeTab === tab}
-            className={`border-r border-border text-[9px] last:border-r-0 focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-accent ${
-              activeTab === tab
-                ? "bg-surface-muted font-semibold text-foreground"
-                : "text-muted hover:text-foreground"
-            }`}
+          <TabsTrigger
+            className="h-auto min-h-0 min-w-0 self-stretch rounded-sm border-0 px-2 text-[10px] font-medium transition-none data-active:bg-background data-active:font-semibold data-active:shadow-none focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-accent dark:data-active:bg-surface"
             key={tab}
-            onClick={() => onTabChange(tab)}
-            role="tab"
-            type="button"
+            value={tab}
           >
+            {tab === "structure" ? (
+              <FolderTree aria-hidden="true" className="size-3" />
+            ) : (
+              <Sparkles aria-hidden="true" className="size-3" />
+            )}
             {tab === "structure" ? "Structure" : "Explanation"}
-          </button>
+          </TabsTrigger>
         ))}
-      </div>
-      <div className="tool-scrollbar min-h-0 flex-1 overflow-y-auto">
-        {activeTab === "explanation" ? (
-          <ExplanationPane
-            analysisId={analysisId}
-            explanation={explanationKey ? explanations[explanationKey] : undefined}
-            graph={graph}
-            target={explanationTarget}
-            onSelectFile={onSelectFile}
-            onStore={(explanation) => {
-              if (explanationKey) onStoreExplanation(explanationKey, explanation);
-            }}
-          />
-        ) : selectedFile ? (
+      </TabsList>
+      <TabsContent
+        className="tool-scrollbar min-h-0 flex-1 overflow-y-auto"
+        value="structure"
+      >
+        {selectedFile ? (
           <FileDetails
             file={selectedFile}
             graph={graph}
@@ -568,17 +660,30 @@ function DetailPane({
             onSelectFile={onSelectFile}
           />
         )}
-        {activeTab === "structure" ? (
-          <InsightsPanel
-            graph={graph}
-            insights={insights}
-            hovered={hovered}
-            onHover={onHover}
-            onSelectFile={onSelectFile}
-          />
-        ) : null}
-      </div>
-    </>
+        <InsightsPanel
+          graph={graph}
+          insights={insights}
+          hovered={hovered}
+          onHover={onHover}
+          onSelectFile={onSelectFile}
+        />
+      </TabsContent>
+      <TabsContent
+        className="tool-scrollbar min-h-0 flex-1 overflow-y-auto"
+        value="explanation"
+      >
+        <ExplanationPane
+          analysisId={analysisId}
+          explanation={explanationKey ? explanations[explanationKey] : undefined}
+          graph={graph}
+          target={explanationTarget}
+          onSelectFile={onSelectFile}
+          onStore={(explanation) => {
+            if (explanationKey) onStoreExplanation(explanationKey, explanation);
+          }}
+        />
+      </TabsContent>
+    </Tabs>
   );
 }
 
@@ -601,7 +706,7 @@ function ExplanationPane({
 
   if (!target) {
     return (
-      <div className="px-3 py-5 text-[10px] leading-4 text-muted">
+      <div className="px-4 py-5 text-[11px] leading-5 text-muted-foreground">
         Select a file or folded folder to explain it.
       </div>
     );
@@ -614,7 +719,7 @@ function ExplanationPane({
   };
 
   return (
-    <div className="px-3 py-4">
+    <div className="px-4 py-4">
       {explanation?.status === "ready" ? (
         <RestrictedMarkdown
           content={explanation.content}
@@ -622,25 +727,27 @@ function ExplanationPane({
           onSelectFile={onSelectFile}
         />
       ) : explanation?.status === "stale" ? (
-        <div className="border-l-2 border-imports pl-2.5">
+        <Alert className="rounded-none border-0 border-l-2 border-imports bg-transparent p-0 pl-2.5">
           <p className="text-[10px] font-semibold">Analysis is stale</p>
-          <p className="mt-1 text-[10px] leading-4 text-muted">
+          <p className="mt-1 text-[10px] leading-4 text-muted-foreground">
             The repository has moved past the analysed commit or this file changed.
           </p>
           <form action={rerunAnalysis} className="mt-3">
             <input name="analysisId" type="hidden" value={analysisId} />
-            <button
-              className="border border-foreground bg-foreground px-2 py-1.5 text-[9px] font-semibold text-surface hover:border-accent hover:bg-accent"
+            <Button
+              className="h-auto rounded-md border-foreground bg-foreground px-3 py-1.5 text-[10px] font-semibold text-surface transition-none hover:border-accent hover:bg-accent"
               type="submit"
             >
               Re-analyse
-            </button>
+            </Button>
           </form>
-        </div>
+        </Alert>
       ) : explanation?.status === "error" ? (
-        <p className="text-[10px] leading-4 text-muted">{explanation.message}</p>
+        <Alert className="rounded-md p-2 text-[10px] leading-4 text-muted-foreground">
+          {explanation.message}
+        </Alert>
       ) : (
-        <p className="text-[10px] leading-4 text-muted">
+        <p className="text-[10px] leading-4 text-muted-foreground">
           {target.kind === "file"
             ? "Explain this file from its direct imports and dependents."
             : "Explain what is in this folder and why files point at it."}
@@ -648,14 +755,14 @@ function ExplanationPane({
       )}
 
       {explanation?.status !== "stale" ? (
-        <button
-          className="mt-4 border border-foreground bg-foreground px-2 py-1.5 text-[9px] font-semibold text-surface hover:border-accent hover:bg-accent disabled:cursor-wait disabled:border-border disabled:bg-surface-muted disabled:text-muted"
+        <Button
+          className="mt-4 h-auto rounded-md border-foreground bg-foreground px-3 py-1.5 text-[10px] font-semibold text-surface transition-none hover:border-accent hover:bg-accent disabled:pointer-events-auto disabled:cursor-wait disabled:border-border disabled:bg-surface-muted disabled:text-muted-foreground disabled:opacity-100"
           disabled={isPending}
           onClick={explain}
           type="button"
         >
           {isPending ? "Explaining..." : explanation?.status === "ready" ? "Explain again" : "Explain"}
-        </button>
+        </Button>
       ) : null}
     </div>
   );
@@ -673,14 +780,14 @@ function RestrictedMarkdown({
   const blocks = content.trim().split(/\n\s*\n/u);
 
   return (
-    <div className="space-y-2.5 text-[10px] leading-[1.55]">
+    <div className="space-y-3 text-[11px] leading-[1.65]">
       {blocks.map((block, blockIndex) => {
         const lines = block.split("\n").map((line) => line.replace(/^#{1,6}\s*/u, ""));
         if (lines.every((line) => /^[-*]\s+/u.test(line))) {
           return (
             <ul className="space-y-1 pl-3" key={blockIndex}>
               {lines.map((line, lineIndex) => (
-                <li className="relative before:absolute before:-left-3 before:text-muted before:content-['-']" key={lineIndex}>
+                <li className="relative before:absolute before:-left-3 before:text-muted-foreground before:content-['-']" key={lineIndex}>
                   {renderInline(line.replace(/^[-*]\s+/u, ""), paths, onSelectFile)}
                 </li>
               ))}
@@ -782,14 +889,14 @@ function RepositoryDetails({
     .slice(0, 8);
 
   return (
-    <div className="pb-4">
-      <div className="border-b border-border px-3 py-3">
-        <p className="font-mono text-xs font-semibold">{repositoryName}</p>
-        <p className="mt-1 text-[10px] text-muted">
-          Framework: {framework ?? "not detected"}
-        </p>
+    <div className="pb-5">
+      <div className="px-4 pb-4 pt-4">
+        <p className="font-heading text-base font-semibold tracking-[-0.025em]">{repositoryName}</p>
+        <Badge className="mt-2 h-5 max-w-full rounded-sm px-2 font-mono text-[9px] font-medium" variant="outline">
+          <span className="truncate">{framework ?? "Framework not detected"}</span>
+        </Badge>
       </div>
-      <div className="grid grid-cols-3 border-b border-border">
+      <div className="mx-4 grid grid-cols-3 divide-x divide-border overflow-hidden rounded-md border border-border bg-surface">
         <Metric label="Files" value={files.length} />
         <Metric label="Imports" value={graph.edges.length} />
         <Metric label="Routes" value={routes.length} />
@@ -829,8 +936,8 @@ function RepositoryDetails({
           />
         ))}
       </DetailSection>
-      <div className="mx-3 mt-3 flex items-center justify-between border border-border bg-surface-muted px-2 py-2 text-[10px]">
-        <span className="text-muted">Convention unidentified</span>
+      <div className="mx-4 mt-4 flex items-center justify-between text-[11px]">
+        <span className="text-muted-foreground">Convention unidentified</span>
         <span className="font-mono font-semibold tabular-nums">{unidentifiedFileCount}</span>
       </div>
     </div>
@@ -855,14 +962,18 @@ function RouteTable({
       {routes.length === 0 ? (
         <EmptyList>No exact routes found.</EmptyList>
       ) : (
-        <table className="w-full table-fixed border-collapse text-left font-mono text-[9px]">
-          <thead className="text-muted">
-            <tr className="border-b border-border">
-              <th className="w-14 px-3 py-1.5 font-medium">Method</th>
-              <th className="px-2 py-1.5 font-medium">Path</th>
-            </tr>
-          </thead>
-          <tbody>
+        <Table className="table-fixed border-collapse text-left font-mono text-[9px]">
+          <TableHeader className="text-muted-foreground">
+            <TableRow className="border-b border-border hover:bg-transparent">
+              <TableHead className="h-auto w-14 px-3 py-1.5 font-medium text-muted-foreground">
+                Method
+              </TableHead>
+              <TableHead className="h-auto px-2 py-1.5 font-medium text-muted-foreground">
+                Path
+              </TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
             {routes.map((route) => {
               const highlighted =
                 hovered?.kind === "file"
@@ -870,11 +981,14 @@ function RouteTable({
                   : hovered?.kind === "node" &&
                     graph.fileToNode[route.filePath] === hovered.id;
               return (
-                <tr className="border-b border-border last:border-b-0" key={`${route.method}:${route.path}:${route.filePath}`}>
-                  <td className="px-3 py-2 align-top font-semibold text-accent">
+                <TableRow
+                  className="border-b border-border last:border-b-0 hover:bg-transparent"
+                  key={`${route.method}:${route.path}:${route.filePath}`}
+                >
+                  <TableCell className="px-3 py-2 align-top font-semibold text-accent">
                     {route.method}
-                  </td>
-                  <td className="p-0">
+                  </TableCell>
+                  <TableCell className="p-0 whitespace-normal">
                     <button
                       className={`block w-full break-all px-2 py-2 text-left focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-accent ${
                         highlighted ? "bg-surface-muted" : "hover:bg-surface-muted"
@@ -887,12 +1001,12 @@ function RouteTable({
                     >
                       {route.path}
                     </button>
-                  </td>
-                </tr>
+                  </TableCell>
+                </TableRow>
               );
             })}
-          </tbody>
-        </table>
+          </TableBody>
+        </Table>
       )}
     </DetailSection>
   );
@@ -917,20 +1031,20 @@ function FileDetails({
   const dependents = graph.edges.filter((edge) => edge.targetPath === file.path);
 
   return (
-    <div className="pb-4">
-      <div className="border-b border-border px-3 py-3">
+    <div className="pb-5">
+      <div className="px-4 pb-3 pt-2">
         <button
-          className="break-all text-left font-mono text-[11px] font-semibold text-accent hover:underline focus-visible:outline-2 focus-visible:outline-accent"
+          className="break-all text-left font-mono text-xs font-semibold text-accent hover:underline focus-visible:outline-2 focus-visible:outline-accent"
           onClick={() => onSelectFile(file.path)}
           type="button"
         >
           {file.path}
         </button>
-        <div className="mt-2 grid grid-cols-2 gap-px border border-border bg-border">
+        <div className="mt-3 grid grid-cols-2 gap-4">
           <Fact label="Kind" value={file.moduleKind.toUpperCase()} />
           <Fact label="Length" value={`${file.lineCount} lines`} />
         </div>
-        <div className="mt-2 grid grid-cols-2 gap-px border border-border bg-border">
+        <div className="mt-3 flex gap-4">
           <WalkButton
             active={walkResult?.direction === "incoming"}
             direction="incoming"
@@ -1026,12 +1140,12 @@ function WalkButton({
   return (
     <button
       aria-pressed={active}
-      className={`bg-surface px-2 py-2 text-left text-[9px] font-semibold focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-accent ${
+      className={`border-b-2 border-transparent px-0 py-1.5 text-left text-[10px] font-semibold focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent ${
         active
           ? direction === "incoming"
-            ? "text-imported-by shadow-[inset_0_2px_0_var(--imported-by)]"
-            : "text-imports shadow-[inset_0_2px_0_var(--imports)]"
-          : "text-muted hover:bg-surface-muted hover:text-foreground"
+            ? "border-imported-by text-imported-by"
+            : "border-imports text-imports"
+          : "text-muted-foreground hover:text-foreground"
       }`}
       onClick={onClick}
       type="button"
@@ -1062,65 +1176,77 @@ function InsightsPanel({
     insights.oversized.length;
 
   return (
-    <details className="group border-t border-border">
-      <summary className="flex cursor-pointer list-none items-center justify-between bg-surface-muted px-3 py-2 text-[9px] font-semibold focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-accent [&::-webkit-details-marker]:hidden">
+    <Collapsible className="group/insights mt-4 border-t border-border pt-2">
+      <CollapsibleTrigger className="flex w-full cursor-pointer items-center justify-between px-4 py-2 text-[10px] font-semibold focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-accent">
         <span className="flex items-center gap-2">
-          <span aria-hidden="true" className="w-2 font-mono text-muted group-open:hidden">+</span>
-          <span aria-hidden="true" className="hidden w-2 font-mono text-muted group-open:inline">−</span>
+          <span
+            aria-hidden="true"
+            className="w-2 font-mono text-muted-foreground group-data-[open]/insights:hidden"
+          >
+            +
+          </span>
+          <span
+            aria-hidden="true"
+            className="hidden w-2 font-mono text-muted-foreground group-data-[open]/insights:inline"
+          >
+            −
+          </span>
           Insights
         </span>
-        <span className="font-mono tabular-nums text-muted">{insightCount}</span>
-      </summary>
-      <InsightGroup
-        graph={graph}
-        paths={insights.unimported}
-        sentence={insightSentences.unimported}
-        hovered={hovered}
-        onHover={onHover}
-        onSelectFile={onSelectFile}
-      />
-      <InsightGroup
-        graph={graph}
-        paths={insights.unusualFanIn}
-        sentence={insightSentences.unusualFanIn}
-        hovered={hovered}
-        onHover={onHover}
-        onSelectFile={onSelectFile}
-      />
-      <section className="border-b border-border">
-        <p className="px-3 pb-1 pt-2 text-[9px] leading-4 text-muted">
-          {insightSentences.cycles}
-        </p>
-        {insights.cycles.length === 0 ? (
-          <EmptyList>None found.</EmptyList>
-        ) : (
-          insights.cycles.map((cycle) => (
-            <div className="border-t border-border" key={cycle.join("\u0000")}>
-              {cycle.map((path, index) => (
-                <PathButton
-                  count={index + 1}
-                  countLabel="cycle step"
-                  graph={graph}
-                  hovered={hovered}
-                  key={`${path}:${index}`}
-                  path={path}
-                  onHover={onHover}
-                  onSelect={onSelectFile}
-                />
-              ))}
-            </div>
-          ))
-        )}
-      </section>
-      <InsightGroup
-        graph={graph}
-        paths={insights.oversized}
-        sentence={insightSentences.oversized}
-        hovered={hovered}
-        onHover={onHover}
-        onSelectFile={onSelectFile}
-      />
-    </details>
+        <span className="font-mono tabular-nums text-muted-foreground">{insightCount}</span>
+      </CollapsibleTrigger>
+      <CollapsibleContent>
+        <InsightGroup
+          graph={graph}
+          paths={insights.unimported}
+          sentence={insightSentences.unimported}
+          hovered={hovered}
+          onHover={onHover}
+          onSelectFile={onSelectFile}
+        />
+        <InsightGroup
+          graph={graph}
+          paths={insights.unusualFanIn}
+          sentence={insightSentences.unusualFanIn}
+          hovered={hovered}
+          onHover={onHover}
+          onSelectFile={onSelectFile}
+        />
+        <section className="pt-3">
+          <p className="px-4 pb-1 text-[10px] leading-4 text-muted-foreground">
+            {insightSentences.cycles}
+          </p>
+          {insights.cycles.length === 0 ? (
+            <EmptyList>None found.</EmptyList>
+          ) : (
+            insights.cycles.map((cycle) => (
+              <div key={cycle.join("\u0000")}>
+                {cycle.map((path, index) => (
+                  <PathButton
+                    count={index + 1}
+                    countLabel="cycle step"
+                    graph={graph}
+                    hovered={hovered}
+                    key={`${path}:${index}`}
+                    path={path}
+                    onHover={onHover}
+                    onSelect={onSelectFile}
+                  />
+                ))}
+              </div>
+            ))
+          )}
+        </section>
+        <InsightGroup
+          graph={graph}
+          paths={insights.oversized}
+          sentence={insightSentences.oversized}
+          hovered={hovered}
+          onHover={onHover}
+          onSelectFile={onSelectFile}
+        />
+      </CollapsibleContent>
+    </Collapsible>
   );
 }
 
@@ -1141,8 +1267,8 @@ function InsightGroup({
   onSelectFile: (path: string) => void;
 }) {
   return (
-    <section className="border-b border-border">
-      <p className="px-3 pb-1 pt-2 text-[9px] leading-4 text-muted">{sentence}</p>
+    <section className="pt-3">
+      <p className="px-4 pb-1 text-[10px] leading-4 text-muted-foreground">{sentence}</p>
       {paths.length === 0 ? (
         <EmptyList>None found.</EmptyList>
       ) : (
@@ -1169,20 +1295,20 @@ function FolderDetails({ node }: { node: FoldedNode }) {
 
   return (
     <div>
-      <div className="border-b border-border px-3 py-3">
-        <p className="break-all font-mono text-[11px] font-semibold">{node.id}</p>
-        <p className="mt-1 text-[10px] text-muted">{node.files.length} files</p>
+      <div className="px-4 pb-3 pt-2">
+        <p className="break-all font-mono text-xs font-semibold">{node.id}</p>
+        <p className="mt-1 text-xs text-muted-foreground">{node.files.length} files</p>
       </div>
       <DetailSection title="File kinds">
         {[...kindCounts.entries()]
           .toSorted((left, right) => right[1] - left[1] || left[0].localeCompare(right[0]))
           .map(([kind, count]) => (
             <div
-              className="flex items-center justify-between border-b border-border px-3 py-2 font-mono text-[10px] last:border-b-0"
+              className="flex items-center justify-between px-4 py-2 font-mono text-[10px]"
               key={kind}
             >
               <span>{kind.toUpperCase()}</span>
-              <span className="tabular-nums text-muted">{count}</span>
+              <span className="tabular-nums text-muted-foreground">{count}</span>
             </div>
           ))}
       </DetailSection>
@@ -1192,8 +1318,8 @@ function FolderDetails({ node }: { node: FoldedNode }) {
 
 function DetailSection({ children, title }: { children: React.ReactNode; title: string }) {
   return (
-    <section className="border-b border-border last:border-b-0">
-      <h2 className="border-b border-border bg-surface-muted px-3 py-1.5 text-[9px] font-semibold text-muted">
+    <section className="mx-3 mt-4 overflow-hidden rounded-md border border-border bg-surface [&>button+button]:border-t [&>button+button]:border-border">
+      <h2 className="border-b border-border bg-surface-muted px-3 py-2 text-[10px] font-semibold text-foreground">
         {title}
       </h2>
       {children}
@@ -1225,7 +1351,7 @@ function PathButton({
 
   return (
     <button
-      className={`flex w-full items-center gap-2 border-b border-border px-3 py-2 text-left font-mono text-[9px] last:border-b-0 focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-accent ${
+      className={`flex w-full items-center gap-2 px-3 py-2 text-left font-mono text-[10px] focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-accent ${
         highlighted ? "bg-surface-muted text-accent" : "hover:bg-surface-muted"
       }`}
       onClick={() => onSelect(path)}
@@ -1236,7 +1362,7 @@ function PathButton({
     >
       <span className="min-w-0 flex-1 break-all">{path}</span>
       {count !== undefined ? (
-        <span className="shrink-0 tabular-nums text-muted" title={`${count} ${countLabel}`}>
+        <span className="shrink-0 tabular-nums text-muted-foreground" title={`${count} ${countLabel}`}>
           {count}
         </span>
       ) : null}
@@ -1246,24 +1372,24 @@ function PathButton({
 
 function Metric({ label, value }: { label: string; value: number }) {
   return (
-    <div className="border-r border-border px-2 py-2.5 last:border-r-0">
-      <p className="font-mono text-sm font-semibold tabular-nums">{value}</p>
-      <p className="mt-0.5 text-[8px] text-muted">{label}</p>
+    <div className="px-2 py-2.5 text-center">
+      <p className="font-mono text-sm font-semibold tabular-nums leading-none">{value}</p>
+      <p className="mt-1.5 text-[9px] text-muted-foreground">{label}</p>
     </div>
   );
 }
 
 function Fact({ label, value }: { label: string; value: string }) {
   return (
-    <div className="bg-surface-muted px-2 py-2">
-      <p className="text-[8px] text-muted">{label}</p>
+    <div>
+      <p className="text-[9px] text-muted-foreground">{label}</p>
       <p className="mt-0.5 font-mono text-[10px]">{value}</p>
     </div>
   );
 }
 
 function EmptyList({ children }: { children: React.ReactNode }) {
-  return <p className="px-3 py-3 text-[10px] text-muted">{children}</p>;
+  return <p className="px-4 py-2 text-[10px] text-muted-foreground">{children}</p>;
 }
 
 function findFile(graph: FoldedGraph, filePath: string): CanvasFile | null {
@@ -1296,7 +1422,7 @@ function ModuleNode({ data, selected }: NodeProps<ModuleFlowNode>) {
   if (!expanded) {
     return (
       <div
-        className={`relative flex size-full flex-col justify-between border bg-surface px-3 py-2 font-mono shadow-[2px_2px_0_var(--border)] ${
+        className={`relative flex size-full flex-col justify-between rounded-md border bg-surface px-3 py-2 font-mono ${
           selected ? "border-accent" : "border-border"
         } ${
           dimmed ? "opacity-15" : "opacity-100"
@@ -1305,7 +1431,7 @@ function ModuleNode({ data, selected }: NodeProps<ModuleFlowNode>) {
         <Handle type="target" position={Position.Left} className="!size-1.5 !border-0 !bg-imported-by" />
         <div className="min-w-0">
           <p className="truncate text-[11px] font-semibold">{folderNode.label}</p>
-          <p className="mt-0.5 text-[9px] text-muted">
+          <p className="mt-0.5 text-[9px] text-muted-foreground">
             {categoryMatchCount === null
               ? `${folderNode.files.length} files`
               : `${categoryMatchCount} / ${folderNode.files.length} match`}
@@ -1314,15 +1440,15 @@ function ModuleNode({ data, selected }: NodeProps<ModuleFlowNode>) {
         <div className="flex items-center justify-between text-[8px] tabular-nums">
           <span
             className="text-imported-by"
-            aria-label={`Imported by ${folderNode.fanIn}`}
-            title={`Imported by ${folderNode.fanIn}`}
+            aria-label={`${folderNode.fanIn} incoming imports`}
+            title={`${folderNode.fanIn} incoming imports`}
           >
             ← {folderNode.fanIn}
           </span>
           <span
             className="text-imports"
-            aria-label={`Imports ${folderNode.fanOut}`}
-            title={`Imports ${folderNode.fanOut}`}
+            aria-label={`${folderNode.fanOut} outgoing imports`}
+            title={`${folderNode.fanOut} outgoing imports`}
           >
             {folderNode.fanOut} →
           </span>
@@ -1334,7 +1460,7 @@ function ModuleNode({ data, selected }: NodeProps<ModuleFlowNode>) {
 
   return (
     <div
-      className={`relative flex size-full flex-col border bg-surface font-mono shadow-[3px_3px_0_var(--border)] ${
+      className={`relative flex size-full flex-col overflow-hidden rounded-md border bg-surface font-mono ${
         selected ? "border-accent" : "border-border"
       } ${
         dimmed ? "opacity-15" : "opacity-100"
@@ -1356,7 +1482,7 @@ function ModuleNode({ data, selected }: NodeProps<ModuleFlowNode>) {
       >
         <span className="min-w-0">
           <span className="block truncate text-[11px] font-semibold">{folderNode.label}</span>
-          <span className="block text-[8px] text-muted">
+          <span className="block text-[8px] text-muted-foreground">
             {categoryMatchCount === null
               ? `${folderNode.files.length} files`
               : `${categoryMatchCount} / ${folderNode.files.length} match`}
@@ -1365,15 +1491,15 @@ function ModuleNode({ data, selected }: NodeProps<ModuleFlowNode>) {
         <span className="flex shrink-0 gap-2 text-[8px] tabular-nums">
           <span
             className="text-imported-by"
-            aria-label={`Imported by ${folderNode.fanIn}`}
-            title={`Imported by ${folderNode.fanIn}`}
+            aria-label={`${folderNode.fanIn} incoming imports`}
+            title={`${folderNode.fanIn} incoming imports`}
           >
             ← {folderNode.fanIn}
           </span>
           <span
             className="text-imports"
-            aria-label={`Imports ${folderNode.fanOut}`}
-            title={`Imports ${folderNode.fanOut}`}
+            aria-label={`${folderNode.fanOut} outgoing imports`}
+            title={`${folderNode.fanOut} outgoing imports`}
           >
             {folderNode.fanOut} →
           </span>
@@ -1393,7 +1519,7 @@ function ModuleNode({ data, selected }: NodeProps<ModuleFlowNode>) {
         {folderNode.files.map((file) => (
           <FileRow
             file={file}
-            color={roleColors[file.role] ?? "var(--muted)"}
+            color={roleColors[file.role] ?? "var(--muted-foreground)"}
             key={file.path}
             selected={selectedFile === file.path}
             hovered={hoveredFile === file.path}
@@ -1433,7 +1559,7 @@ function FileRow({
   const name = fileName(file.path);
   return (
     <div
-      className={`relative h-6 border-b border-border last:border-b-0 ${
+      className={`relative h-6 ${
         dimmed ? "opacity-15" : ""
       }`}
     >
@@ -1447,10 +1573,10 @@ function FileRow({
         type="button"
         className={`nodrag flex size-full items-center gap-2 px-3 text-left text-[9px] focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-accent ${
           selected
-            ? "bg-accent text-background"
+            ? "bg-accent text-accent-foreground"
             : hovered
               ? "bg-surface-muted outline outline-1 outline-accent"
-              : "hover:bg-surface-muted"
+              : "hover:bg-surface-muted hover:outline hover:outline-1 hover:outline-accent"
         }`}
         onClick={(event) => {
           event.stopPropagation();
@@ -1469,14 +1595,14 @@ function FileRow({
         <span className="size-1.5 shrink-0" style={{ backgroundColor: color }} />
         <span className="min-w-0 flex-1 truncate">{name}</span>
         <span
-          className={selected ? "text-background/70" : "text-imported-by"}
-          title={`Imported by ${file.fanIn}`}
+          className={selected ? "text-accent-foreground/70" : "text-imported-by"}
+          title={`${file.fanIn} incoming imports`}
         >
           ← {file.fanIn}
         </span>
         <span
-          className={selected ? "text-background/70" : "text-imports"}
-          title={`Imports ${file.fanOut}`}
+          className={selected ? "text-accent-foreground/70" : "text-imports"}
+          title={`${file.fanOut} outgoing imports`}
         >
           {file.fanOut} →
         </span>
@@ -1493,6 +1619,13 @@ function FileRow({
 
 function fileName(filePath: string): string {
   return filePath.split("/").at(-1) ?? filePath;
+}
+
+/** Fan adjacent edges into stable, distinct curves without introducing motion. */
+function edgeCurvature(edgeId: string, sameFolder: boolean): number {
+  let hash = 0;
+  for (const character of edgeId) hash = (hash * 31 + character.charCodeAt(0)) >>> 0;
+  return sameFolder ? 0.85 + (hash % 3) * 0.12 : 0.32 + (hash % 5) * 0.06;
 }
 
 function nodeDimensions(node: FoldedNode, expanded: boolean) {

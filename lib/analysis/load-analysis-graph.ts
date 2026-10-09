@@ -42,6 +42,19 @@ export async function loadAnalysisGraph(
   const graphData = readObject(data, "analysis graph");
   const repositoryName = readString(graphData.repository_name, "repository name");
   const framework = readNullableString(graphData.framework, "framework");
+  const coverageData = readObject(graphData.coverage, "coverage");
+  const coverage = {
+    filesFound: readNumber(coverageData.filesFound, "files found"),
+    filesParsed: readNumber(coverageData.filesParsed, "files parsed"),
+    filesSkipped: readNumber(coverageData.filesSkipped, "files skipped"),
+    importsFound: readNumber(coverageData.importsFound, "imports found"),
+    importsResolved: readNumber(coverageData.importsResolved, "imports resolved"),
+    importsExternal: readNumber(coverageData.importsExternal, "external imports"),
+    importsExcluded: readNumber(coverageData.importsExcluded, "excluded imports"),
+    importsUnresolved: readNumber(coverageData.importsUnresolved, "unresolved imports"),
+    reExportsFound: readNumber(coverageData.reExportsFound, "re-exports found"),
+    reExportsResolved: readNumber(coverageData.reExportsResolved, "re-exports resolved"),
+  };
   const storedFiles = readArray(graphData.files, "files").map((value) => {
     const file = readObject(value, "file");
     return {
@@ -112,6 +125,7 @@ export async function loadAnalysisGraph(
   return {
     repositoryName,
     framework,
+    coverage,
     graph: foldGraph(files, edges),
     insights: calculateInsights(files, edges, conventionEntryPaths),
     categories,
@@ -120,7 +134,10 @@ export async function loadAnalysisGraph(
   };
 }
 
-function readObject(value: Json, name: string): Record<string, Json | undefined> {
+function readObject(
+  value: Json | undefined,
+  name: string,
+): Record<string, Json | undefined> {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
     throw new Error(`Stored ${name} is invalid`);
   }

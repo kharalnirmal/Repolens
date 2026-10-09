@@ -3,6 +3,7 @@
 import { auth, clerkClient } from "@clerk/nextjs/server";
 import { after } from "next/server";
 import { redirect } from "next/navigation";
+import { revalidatePath } from "next/cache";
 
 import { explainTarget, type ExplanationResult, type ExplanationTarget } from "@/lib/ai/explain";
 import { runAnalysis } from "@/lib/analysis/run-analysis";
@@ -18,6 +19,11 @@ export type InviteState = {
 };
 
 export type AnalyzeRepositoryState = {
+  status: "idle" | "error";
+  message?: string;
+};
+
+export type DeleteRepositoryState = {
   status: "idle" | "error";
   message?: string;
 };
@@ -99,6 +105,47 @@ export async function rerunAnalysis(formData: FormData): Promise<void> {
   }
 
   redirect(`/analyses/${analysisId}`);
+}
+
+export async function deleteRepository(
+  _previousState: DeleteRepositoryState,
+  formData: FormData,
+): Promise<DeleteRepositoryState> {
+  const authentication = await auth();
+  if (
+    !authentication.userId ||
+    !authentication.orgId ||
+    !authentication.has({ role: "org:admin" })
+  ) {
+    return { status: "error", message: "Only organization admins can delete repositories." };
+  }
+
+  const projectId = formData.get("projectId");
+  if (
+    typeof projectId !== "string" ||
+    !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(projectId)
+  ) {
+    return { status: "error", message: "Invalid repository." };
+  }
+
+  const supabase = createServerSupabaseClient(authentication.getToken);
+  const { data: wasDeleted, error } = await supabase.rpc(
+    "delete_repository_project",
+    { p_project_id: projectId },
+  );
+
+  if (error) {
+    return { status: "error", message: `Could not delete repository: ${error.message}` };
+  }
+  if (!wasDeleted) {
+    return {
+      status: "error",
+      message: "The repository was not deleted. Its analysis may still be queued.",
+    };
+  }
+
+  revalidatePath("/");
+  return { status: "idle" };
 }
 
 export async function requestExplanation(
