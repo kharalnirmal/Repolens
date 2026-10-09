@@ -9,7 +9,7 @@ LangChain Inc. maintains three layered open-source tools for building agents, pl
 - **Deep Agents** (top layer, *harness*) — batteries-included toolkit built on LangChain + LangGraph. Ships with planning, file management, subagent spawning, and memory out of the box.
 - **LangGraph** (middle layer, *runtime*) — low-level orchestration for durable execution, custom control flow, and stateful workflows. LangChain agents run on top of LangGraph.
 - **LangChain** (bottom layer, *framework*) — abstractions for models, tools, and the agent loop. Provider-agnostic, easiest to start with.
-- **LangSmith** (cross-cutting) — observability and evaluation platform. Framework-agnostic; always recommended alongside any of the above.
+- **LangSmith** (cross-cutting) — observability and evaluation platform. Framework-agnostic; configure it when the user requests tracing.
 
 Higher layers depend on lower ones, but you don't need to use lower layers directly. Deep Agents gives you LangGraph's durable execution without writing graph code. LangChain gives you models and tools without managing graph edges.
 </overview>
@@ -109,7 +109,7 @@ A compiled LangGraph graph can be registered as a named subagent inside Deep Age
 
 ## Step 2 — Set Environment Variables
 
-Always set these for observability. These are the current LangSmith env var names. Copy them as-is. OLDER NAMES NO LONGER WORK.
+Set these for observability only when the user requests tracing. These are the current LangSmith env var names. Copy them as-is. OLDER NAMES NO LONGER WORK.
 
 <environment-variables>
 LANGSMITH_API_KEY=<your-key>

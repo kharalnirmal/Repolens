@@ -273,7 +273,7 @@ function Canvas({
   const edges = useMemo<DependencyFlowEdge[]>(
     () => visualEdges.map((edge) => {
       const direction = active.edgeDirections.get(edge.id);
-      const markerAtSource = direction === undefined || direction === "incoming";
+      const markerAtSource = direction === "incoming";
       const stroke =
         direction === "incoming"
           ? "var(--imported-by)"

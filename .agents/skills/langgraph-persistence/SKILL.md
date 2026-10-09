@@ -111,6 +111,8 @@ from langgraph.checkpoint.postgres import PostgresSaver
 
 with PostgresSaver.from_conn_string(os.environ["DATABASE_URL"]) as checkpointer:
     graph = builder.compile(checkpointer=checkpointer)
+    config = {"configurable": {"thread_id": "prod-1"}}
+    result = graph.invoke({"messages": ["Hello"]}, config)
 ```
 </python>
 <typescript>
@@ -122,8 +124,11 @@ import { PostgresSaver } from "@langchain/langgraph-checkpoint-postgres";
 // Run once during deployment (not at application startup):
 //   await PostgresSaver.fromConnString(process.env.DATABASE_URL!).setup();
 
+// Keep the saver open for every graph call, e.g. managed by the application lifespan.
 const checkpointer = PostgresSaver.fromConnString(process.env.DATABASE_URL!);
 const graph = builder.compile({ checkpointer });
+const config = { configurable: { thread_id: "prod-1" } };
+const result = await graph.invoke({ messages: ["Hello"] }, config);
 ```
 </typescript>
 </ex-production-postgres>

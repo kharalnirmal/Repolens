@@ -1,3 +1,4 @@
+import Image from "next/image";
 import Link from "next/link";
 
 import { EvidenceCoverageIllustration } from "@/components/evidence-coverage-illustration";
@@ -49,12 +50,17 @@ function InstagramIcon({ className = "size-4" }: IconProps) {
 
 const sectionHeading = "max-w-[18ch] font-heading text-[clamp(2.2rem,4.4vw,4rem)] font-semibold leading-[1.04] tracking-[-0.055em]";
 
-function ProductImagePlaceholder() {
+function ProductImage() {
   return (
-    <div className="flex h-full w-full items-center justify-center bg-surface-muted/40 p-6">
-      <div className="flex h-full w-full items-center justify-center rounded-sm border border-dashed border-border bg-background/60">
-        <span className="font-mono text-[10px] text-muted-foreground">Product image</span>
-      </div>
+    <div className="relative h-full w-full bg-surface-muted/40">
+      <Image
+        src="/landing.png"
+        alt="RepoLens dependency map of a repository"
+        fill
+        priority
+        sizes="(max-width: 1140px) 100vw, 1140px"
+        className="object-cover object-top"
+      />
     </div>
   );
 }
@@ -106,7 +112,7 @@ export function LandingPage() {
                       inputMode="url"
                       required
                       autoComplete="url"
-                      placeholder="github.com/owner/repository"
+                      placeholder="https://github.com/owner/repository"
                       className="h-10 min-w-0 flex-1 rounded-none border-0 bg-transparent px-0 font-mono text-[11px] placeholder:text-muted-foreground focus-visible:ring-0 dark:bg-transparent"
                     />
                     <Button type="submit" className="h-10 shrink-0 rounded-sm bg-imports px-5 text-sm font-semibold text-white hover:bg-imports hover:brightness-95 focus-visible:ring-2 focus-visible:ring-imports">
@@ -122,7 +128,7 @@ export function LandingPage() {
               </div>
             }
           >
-            <ProductImagePlaceholder />
+            <ProductImage />
           </ContainerScroll>
         </section>
 

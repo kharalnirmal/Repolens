@@ -19,21 +19,35 @@ const mdaEntrypoint = join(
   "bin",
   "mda.mjs",
 );
-const npmEntrypoint = join(
-  dirname(process.execPath),
-  "node_modules",
-  "npm",
-  "bin",
-  "npm-cli.js",
-);
+const npmCandidates = [
+  process.env.npm_execpath,
+  join(
+    dirname(process.execPath),
+    "node_modules",
+    "npm",
+    "bin",
+    "npm-cli.js",
+  ),
+  join(
+    dirname(process.execPath),
+    "..",
+    "lib",
+    "node_modules",
+    "npm",
+    "bin",
+    "npm-cli.js",
+  ),
+].filter((candidate) => typeof candidate === "string" && candidate.length > 0);
+const npmEntrypoint =
+  npmCandidates.find((candidate) => existsSync(candidate)) ?? "";
 const devArguments = process.argv.slice(2);
 
-if (!existsSync(npmEntrypoint)) {
+if (!npmEntrypoint) {
   console.error("The Node.js installation must include npm.");
   process.exit(1);
 }
 
-function run(command, args, cwd = root) {
+function run(command, args, cwd = root, exitOnFailure = true) {
   const result = spawnSync(command, args, { cwd, stdio: "inherit" });
 
   if (result.error) {
@@ -41,12 +55,22 @@ function run(command, args, cwd = root) {
   }
 
   if (result.status !== 0) {
-    process.exit(result.status ?? 1);
+    if (exitOnFailure) {
+      process.exit(result.status ?? 1);
+    }
+    throw new Error(
+      `Command failed: ${command} ${args.join(" ")} (exit ${result.status ?? 1})`,
+    );
   }
 }
 
-function compile(output) {
-  run(process.execPath, [mdaEntrypoint, "build", root, "--out", output]);
+function compile(output, exitOnFailure = true) {
+  run(
+    process.execPath,
+    [mdaEntrypoint, "build", root, "--out", output],
+    root,
+    exitOnFailure,
+  );
 }
 
 compile(buildDirectory);
@@ -88,7 +112,7 @@ function rebuild() {
 
   rebuilding = true;
   try {
-    compile(reloadDirectory);
+    compile(reloadDirectory, false);
     const nextLock = readFileSync(join(reloadDirectory, "package-lock.json"), "utf8");
     cpSync(reloadDirectory, buildDirectory, {
       recursive: true,
@@ -97,11 +121,13 @@ function rebuild() {
     });
 
     if (nextLock !== installedLock) {
-      run(process.execPath, [npmEntrypoint, "ci"], buildDirectory);
+      run(process.execPath, [npmEntrypoint, "ci"], buildDirectory, false);
       installedLock = nextLock;
     }
 
     console.log("MDA source rebuilt.");
+  } catch (error) {
+    console.error("MDA rebuild failed; watcher continues.", error);
   } finally {
     rebuilding = false;
     if (rebuildPending) {

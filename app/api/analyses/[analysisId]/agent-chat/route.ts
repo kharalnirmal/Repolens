@@ -80,18 +80,42 @@ export async function POST(
   }
 
   const client = new Client({ apiUrl: agentUrl, apiKey: agentApiKey });
+  const threadMetadata = {
+    repolens_analysis_id: analysis.id,
+    repolens_organization_id: authentication.orgId,
+    repolens_user_id: authentication.userId,
+  };
   let resolvedThreadId = threadId;
-  try {
-    if (!resolvedThreadId) {
-      const thread = await client.threads.create();
-      resolvedThreadId = thread.thread_id;
+  if (resolvedThreadId) {
+    let existingThread;
+    try {
+      existingThread = await client.threads.get(resolvedThreadId);
+    } catch {
+      return NextResponse.json({ error: "Thread not found" }, { status: 404 });
     }
-  } catch (streamError) {
-    console.error("Agent is unreachable", streamError);
-    return NextResponse.json(
-      { error: "Agent is unreachable right now" },
-      { status: 502 },
-    );
+    const metadata =
+      (existingThread.metadata ?? {}) as Record<string, unknown>;
+    if (
+      metadata.repolens_analysis_id !== threadMetadata.repolens_analysis_id ||
+      metadata.repolens_organization_id !==
+        threadMetadata.repolens_organization_id ||
+      metadata.repolens_user_id !== threadMetadata.repolens_user_id
+    ) {
+      return NextResponse.json({ error: "Thread not found" }, { status: 404 });
+    }
+  } else {
+    try {
+      const thread = await client.threads.create({
+        metadata: threadMetadata,
+      });
+      resolvedThreadId = thread.thread_id;
+    } catch (streamError) {
+      console.error("Agent is unreachable", streamError);
+      return NextResponse.json(
+        { error: "Agent is unreachable right now" },
+        { status: 502 },
+      );
+    }
   }
 
   // The credential is minted and consumed server-side; the browser only ever
@@ -147,11 +171,20 @@ export async function POST(
         send("done", {});
         controller.close();
       } catch (streamError) {
+        if (request.signal.aborted) return;
         console.error("Agent run failed", streamError);
-        send("error", {
-          message: "Agent response stopped before it finished",
-        });
-        controller.close();
+        try {
+          send("error", {
+            message: "Agent response stopped before it finished",
+          });
+        } catch {
+          // The stream is already cancelled; nothing left to report.
+        }
+        try {
+          controller.close();
+        } catch {
+          // The stream is already cancelled; closing again would throw.
+        }
       }
     },
     cancel() {

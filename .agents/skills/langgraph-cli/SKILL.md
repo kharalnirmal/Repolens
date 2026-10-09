@@ -14,7 +14,7 @@ Key commands:
 - **`langgraph deploy`** — Ship to LangGraph Platform
 - **`langgraph dockerfile`** — Generate a Dockerfile
 
-All commands (except `new`) read from a `langgraph.json` config file in the project root.
+Graph build, run, and deploy commands read from a `langgraph.json` config file in the project root. Management subcommands such as `deploy list`, `delete`, and `logs` can run without a project config.
 </overview>
 
 ## When to use

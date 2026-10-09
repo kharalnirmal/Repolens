@@ -4,7 +4,7 @@ description: Create LangChain agents with create_agent, define tools, and use mi
 ---
 
 <oneliner>
-Build production agents using `create_agent()`, middleware patterns, and the `@tool` decorator / `tool()` function. When creating LangChain agents, you MUST use create_agent(), with middleware for custom flows. All other alternatives are outdated.
+Build production agents using `create_agent()`, middleware patterns, and the `@tool` decorator / `tool()` function. `create_agent()` is the default for standard agent loops, with middleware for custom flows. LangGraph remains a supported option for advanced workflows requiring fine-grained control.
 </oneliner>
 
 <create_agent>

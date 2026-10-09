@@ -126,6 +126,7 @@ from typing import Literal
 from typing_extensions import TypedDict
 
 class EmailAgentState(TypedDict):
+    email_id: str
     email_content: str
     draft_response: str
     classification: dict
@@ -136,14 +137,15 @@ def human_review(state: EmailAgentState) -> Command[Literal["send_reply", "__end
 
     # interrupt() must come first — any code before it will re-run on resume
     human_decision = interrupt({
-        "email_id": state.get("email_content", ""),
+        "email_id": state.get("email_id", ""),
+        "content": state.get("email_content", ""),
         "draft_response": state.get("draft_response", ""),
         "urgency": classification.get("urgency"),
         "action": "Please review and approve/edit this response"
     })
 
     # Process the human's decision
-    if human_decision.get("approved"):
+    if human_decision.get("approved") is True:
         return Command(
             update={"draft_response": human_decision.get("edited_response", state.get("draft_response", ""))},
             goto="send_reply"
@@ -164,14 +166,15 @@ const humanReview: GraphNode<typeof EmailAgentState> = async (state) => {
 
   // interrupt() must come first — any code before it will re-run on resume
   const humanDecision = interrupt({
-    emailId: state.emailContent,
+    emailId: state.emailId,
+    content: state.emailContent,
     draftResponse: state.responseText,
     urgency: classification.urgency,
     action: "Please review and approve/edit this response",
   });
 
   // Process the human's decision
-  if (humanDecision.approved) {
+  if (humanDecision.approved === true) {
     return new Command({
       update: { responseText: humanDecision.editedResponse || state.responseText },
       goto: "sendReply",
@@ -203,8 +206,8 @@ def get_age_node(state):
     while True:
         answer = interrupt(prompt)
 
-        # Validate the input
-        if isinstance(answer, int) and answer > 0:
+        # Validate the input (reject bools: bool is a subclass of int)
+        if not isinstance(answer, bool) and isinstance(answer, int) and answer > 0:
             break
         else:
             # Invalid input — ask again with a more specific prompt

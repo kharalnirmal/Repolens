@@ -40,7 +40,7 @@ Pick **one** agent orchestration layer. You do not need both.
 | **LangGraph** | Need fine-grained graph control, custom workflows, loops, or branching | `langgraph` / `@langchain/langgraph` |
 | **Deep Agents** | Want batteries-included planning, memory, file context, and skills out of the box | `deepagents` (depends on LangGraph; installs it as a transitive dep) |
 
-Both sit on top of `langchain` + `langchain-core` + `langsmith`.
+Both sit on top of `langchain-core` + `langsmith`. `langchain` is optional, needed only for LangChain integrations.
 </framework-choice>
 
 ---
@@ -156,10 +156,12 @@ Minimal dependency set for a LangGraph project (provider-agnostic).
 
 ```
 # requirements.txt
-langchain>=1.0,<2.0
 langchain-core>=1.0,<2.0
 langgraph>=1.0,<2.0
 langsmith>=0.3.0
+
+# Optional, only for LangChain integrations:
+# langchain>=1.0,<2.0
 
 # Add your model provider, e.g.:
 # langchain-openai
@@ -177,7 +179,6 @@ Minimal package.json dependencies for a LangGraph project (provider-agnostic).
 {
   "dependencies": {
     "@langchain/core": "^1.0.0",
-    "langchain": "^1.0.0",
     "@langchain/langgraph": "^1.0.0",
     "langsmith": "^0.3.0"
   }
