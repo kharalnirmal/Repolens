@@ -250,6 +250,9 @@ from langchain.agents.middleware import wrap_tool_call
 
 @wrap_tool_call
 def retry_middleware(request, handler):
+    # Only retry operations known to be idempotent; otherwise let the
+    # exception from handler(request) propagate instead of retrying a
+    # side-effecting tool call.
     for attempt in range(3):
         try:
             return handler(request)
@@ -259,8 +262,13 @@ def retry_middleware(request, handler):
 
 @wrap_tool_call
 def guard_middleware(request, handler):
+    from langchain_core.messages import ToolMessage
+
     if request.tool_call["name"] == "dangerous_tool":
-        return "This tool is disabled"  # short-circuit
+        return ToolMessage(
+            content="This tool is disabled",
+            tool_call_id=request.tool_call["id"],
+        )  # short-circuit
     return handler(request)
 ```
 </python>
@@ -271,6 +279,9 @@ def guard_middleware(request, handler):
 import { createMiddleware } from "langchain";
 
 const retryMiddleware = createMiddleware({
+  // Only retry operations known to be idempotent; otherwise let the
+  // exception from handler(request) propagate instead of retrying a
+  // side-effecting tool call.
   wrapToolCall: async (request, handler) => {
     for (let attempt = 0; attempt < 3; attempt++) {
       try { return await handler(request); }

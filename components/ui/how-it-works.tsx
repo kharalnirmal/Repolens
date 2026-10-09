@@ -113,7 +113,8 @@ function ResolvedImports({ reduceMotion }: { reduceMotion: boolean | null }) {
           strokeWidth="2"
           strokeDasharray="5 6"
           initial={reduceMotion ? false : { strokeDashoffset: 0 }}
-          animate={reduceMotion ? undefined : { strokeDashoffset: -44 }}
+          whileInView={reduceMotion ? undefined : { strokeDashoffset: -44 }}
+          viewport={{ once: false, amount: 0.7 }}
           transition={{ duration: 2.4, repeat: Infinity, ease: "linear" }}
         />
         {nodes.map((node, index) => (

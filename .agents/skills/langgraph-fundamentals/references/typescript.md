@@ -265,13 +265,16 @@ const result = await graph.invoke({ input: "hello" }, { configurable: { thread_i
 Stream LLM tokens in real-time for chat UI display.
 
 ```typescript
-for await (const chunk of graph.stream(
+for await (const chunk of await graph.stream(
   { messages: [new HumanMessage("Hello")] },
   { streamMode: "messages" }
 )) {
   const [token, metadata] = chunk;
-  if (token.content) {
-    process.stdout.write(token.content);
+  const text = Array.isArray(token.content)
+    ? token.content.filter((part) => part.type === "text").map((part) => part.text).join("")
+    : token.content;
+  if (typeof text === "string" && text) {
+    process.stdout.write(text);
   }
 }
 ```
@@ -291,7 +294,7 @@ const myNode = async (state: typeof State.State) => {
   return { result: "done" };
 };
 
-for await (const chunk of graph.stream({ data: "test" }, { streamMode: "custom" })) {
+for await (const chunk of await graph.stream({ data: "test" }, { streamMode: "custom" })) {
   console.log(chunk);
 }
 ```

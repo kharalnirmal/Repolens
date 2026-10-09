@@ -326,14 +326,19 @@ export async function writeFile(
         "Swarm requires an 'edit_file' PTC tool to update existing tables",
       );
     }
-    if (previousContent == null) {
-      throw new Error(
-        `Cannot overwrite ${path}: file already exists and no previous content available`,
-      );
+    let oldString = previousContent;
+    if (oldString == null) {
+      try {
+        oldString = await readFile(path);
+      } catch {
+        throw new Error(
+          `Cannot overwrite ${path}: file already exists and no previous content available`,
+        );
+      }
     }
     await tools.editFile({
       file_path: path,
-      old_string: previousContent,
+      old_string: oldString,
       new_string: content,
     });
   }

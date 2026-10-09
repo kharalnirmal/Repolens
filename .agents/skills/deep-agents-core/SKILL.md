@@ -31,7 +31,7 @@ The agent harness provides these capabilities automatically - you configure, not
 
 | If you need to... | Middleware | Notes |
 |------------------|------------|-------|
-| Track complex tasks | TodoListMiddleware | Default enabled |
+| Track complex tasks | TodoListMiddleware | Opt-in |
 | Manage file context | FilesystemMiddleware | Configure backend |
 | Delegate work | SubAgentMiddleware | Add custom subagents |
 | Add human approval | HumanInTheLoopMiddleware | Requires checkpointer |
@@ -140,9 +140,9 @@ const agent = await createDeepAgent({
 </ex-full-configuration>
 
 <built-in-tools>
-Every deep agent has access to:
+When its middleware is configured, a deep agent has access to:
 
-1. **Planning**: `write_todos` - Track multi-step tasks
+1. **Planning**: `write_todos` - Track multi-step tasks (requires opt-in TodoListMiddleware)
 2. **Filesystem**: `ls`, `read_file`, `write_file`, `edit_file`, `glob`, `grep`
 3. **Delegation**: `task` - Spawn specialized subagents
 </built-in-tools>
@@ -284,7 +284,7 @@ agent = create_deep_agent(
 
 ### What Agents CANNOT Configure
 
-- Core middleware removal (TodoList, Filesystem, SubAgent always present)
+- Core middleware removal (Filesystem, SubAgent always present; TodoListMiddleware is opt-in)
 - The write_todos, task, or filesystem tool names
 - The SKILL.md frontmatter format
 </boundaries>
@@ -344,11 +344,14 @@ const agent = await createDeepAgent({ backend: (config) => new StoreBackend(conf
 Use consistent thread_id to maintain conversation context across invocations.
 
 ```python
+from langgraph.checkpoint.memory import MemorySaver
+
 # WRONG: Each invocation is isolated
 agent.invoke({"messages": [{"role": "user", "content": "Hi"}]})
 agent.invoke({"messages": [{"role": "user", "content": "What did I say?"}]})
 
-# CORRECT
+# CORRECT: checkpointer + reused thread_id preserves state
+agent = create_deep_agent(checkpointer=MemorySaver())
 config = {"configurable": {"thread_id": "user-123"}}
 agent.invoke({"messages": [...]}, config=config)
 agent.invoke({"messages": [...]}, config=config)
@@ -358,11 +361,14 @@ agent.invoke({"messages": [...]}, config=config)
 Use consistent thread_id to maintain conversation context across invocations.
 
 ```typescript
+import { MemorySaver } from "@langchain/langgraph";
+
 // WRONG: Each invocation is isolated
 await agent.invoke({ messages: [{ role: "user", content: "Hi" }] });
 await agent.invoke({ messages: [{ role: "user", content: "What did I say?" }] });
 
-// CORRECT
+// CORRECT: checkpointer + reused thread_id preserves state
+const agent = await createDeepAgent({ checkpointer: new MemorySaver() });
 const config = { configurable: { thread_id: "user-123" } };
 await agent.invoke({ messages: [...] }, config);
 await agent.invoke({ messages: [...] }, config);
@@ -424,7 +430,7 @@ description: Python testing best practices with pytest fixtures, mocking, and as
 
 <fix-subagent-skills>
 <python>
-Skills are not inherited by subagents - provide them explicitly.
+General-purpose subagents inherit the main agent's skills; custom subagents do not inherit them by default - provide them explicitly.
 
 ```python
 # WRONG: Custom subagents don't inherit skills
@@ -433,7 +439,7 @@ agent = create_deep_agent(
     subagents=[{"name": "helper", ...}]  # No skills
 )
 
-# CORRECT: Provide skills explicitly
+# CORRECT: Provide skills explicitly (general-purpose subagents inherit automatically)
 agent = create_deep_agent(
     skills=["/main-skills/"],
     subagents=[{"name": "helper", "skills": ["/helper-skills/"], ...}]

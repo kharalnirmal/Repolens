@@ -10,7 +10,7 @@ Deep Agents include three orchestration capabilities:
 2. **TodoListMiddleware**: Plan and track tasks via `write_todos` tool
 3. **HumanInTheLoopMiddleware**: Require approval before sensitive operations
 
-All three are automatically included in `create_deep_agent()`.
+SubAgentMiddleware is included by default. TodoList and HITL require configuration, and HITL requires a checkpointer.
 </overview>
 
 ---
@@ -190,8 +190,9 @@ Invoke an agent that automatically creates a todo list for a multi-step task.
 
 ```python
 from deepagents import create_deep_agent
+from langchain.agents.middleware import TodoListMiddleware
 
-agent = create_deep_agent()  # TodoListMiddleware included by default
+agent = create_deep_agent(middleware=[TodoListMiddleware()])  # TodoList is opt-in
 
 result = agent.invoke({
     "messages": [{"role": "user", "content": "Create a REST API: design models, implement CRUD, add auth, write tests"}]
@@ -211,8 +212,9 @@ Invoke an agent that automatically creates a todo list for a multi-step task.
 
 ```typescript
 import { createDeepAgent } from "deepagents";
+import { todoListMiddleware } from "langchain";
 
-const agent = await createDeepAgent();  // TodoListMiddleware included
+const agent = await createDeepAgent({ middleware: [todoListMiddleware()] });  // TodoList is opt-in
 
 const result = await agent.invoke({
   messages: [{ role: "user", content: "Create a REST API: design models, implement CRUD, add auth, write tests" }]
@@ -244,7 +246,10 @@ Todo list state requires a thread_id for persistence across invocations.
 # WRONG: Fresh state each time without thread_id
 agent.invoke({"messages": [...]})
 
-# CORRECT: Use thread_id
+# CORRECT: Use checkpointer + thread_id
+from langgraph.checkpoint.memory import MemorySaver
+
+agent = create_deep_agent(checkpointer=MemorySaver())
 config = {"configurable": {"thread_id": "user-session"}}
 agent.invoke({"messages": [...]}, config=config)  # Todos preserved
 ```
@@ -480,12 +485,12 @@ await agent.invoke(new Command({ resume: { decisions: [{ type: "approve" }] } })
 
 <fix-interrupt-checks-between-invocations>
 <python>
-Interrupts happen BETWEEN invoke() calls, not mid-execution.
+interrupt_on pauses the current invoke() when a configured tool is reached, returns control to the caller, and is resumed in a later invocation.
 
 ```python
-result = agent.invoke({...}, config=config)       # Step 1: triggers interrupt
+result = agent.invoke({...}, config=config)       # Step 1: pauses at the configured tool
 if "__interrupt__" in result:                      # Step 2: check for interrupt
-    result = agent.invoke(                         # Step 3: resume
+    result = agent.invoke(                         # Step 3: resume in a later invocation
         Command(resume={"decisions": [{"type": "approve"}]}),
         config=config,
     )

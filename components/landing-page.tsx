@@ -106,7 +106,7 @@ export function LandingPage() {
                       inputMode="url"
                       required
                       autoComplete="url"
-                      placeholder="github.com/owner/repository"
+                      placeholder="https://github.com/owner/repository"
                       className="h-10 min-w-0 flex-1 rounded-none border-0 bg-transparent px-0 font-mono text-[11px] placeholder:text-muted-foreground focus-visible:ring-0 dark:bg-transparent"
                     />
                     <Button type="submit" className="h-10 shrink-0 rounded-sm bg-imports px-5 text-sm font-semibold text-white hover:bg-imports hover:brightness-95 focus-visible:ring-2 focus-visible:ring-imports">

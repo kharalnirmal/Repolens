@@ -39,7 +39,24 @@ async function callRepositoryTool(
   });
 
   if (!response.ok) {
-    throw new Error(`RepoLens tool API returned ${response.status}`);
+    let message = `RepoLens tool API returned ${response.status}`;
+    if (response.status >= 400 && response.status < 500) {
+      try {
+        const errorBody: unknown = await response.json();
+        if (
+          errorBody !== null &&
+          typeof errorBody === "object" &&
+          !Array.isArray(errorBody) &&
+          typeof (errorBody as Record<string, unknown>).error === "string" &&
+          ((errorBody as Record<string, unknown>).error as string).trim()
+        ) {
+          message += `: ${((errorBody as Record<string, unknown>).error as string).trim()}`;
+        }
+      } catch {
+        // Keep the status-based message when the body is unreadable.
+      }
+    }
+    throw new Error(message);
   }
 
   const result: unknown = await response.json();

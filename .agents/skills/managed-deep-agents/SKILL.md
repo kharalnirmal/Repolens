@@ -126,7 +126,7 @@ Check requests against this list *before* agreeing to build them. Being straight
 | US LangSmith Cloud only | No self-hosted, no hybrid, no EU region. Needs `langgraph deploy`. |
 | No public management API | Use `mda` or LangSmith's GitHub deployment UI to create and update agents. Do not invent a public create/update REST flow. |
 | Slack is the only channel | No Discord, Teams, email, or SMS channel. Remote MCP servers for those products are tools, not channels. |
-| Memory is deployment-shared | One `/memories/agent/` tree for **all** callers. There is no per-user memory. |
+| Memory is deployment-shared | One deployment-shared `/memories/agent/` tree for **all** callers. Private `/memories/user/` memory is per-user and requires user identity with access granted to that user. |
 | One agent entry per project | No multiple graphs in one project. Use `subagents=` for delegation. |
 | Schedules must be static literals | No env vars, function calls, or computed values in a schedule declaration. |
 | Build archive capped at 200 MB | Large fixtures or model weights in the project will fail the deploy. |

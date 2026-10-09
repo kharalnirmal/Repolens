@@ -189,8 +189,17 @@ function mergeRowResults(
 
     if (result.status === "completed" && result.result != null) {
       try {
-        mergeResult(row, JSON.parse(result.result));
-        completed++;
+        const parsed: unknown = JSON.parse(result.result);
+        if (
+          typeof parsed !== "object" ||
+          parsed === null ||
+          Array.isArray(parsed)
+        ) {
+          failed++;
+        } else {
+          mergeResult(row, parsed as Record<string, unknown>);
+          completed++;
+        }
       } catch {
         failed++;
       }
