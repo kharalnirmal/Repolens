@@ -65,10 +65,29 @@ class RecordingSession:
                 {"user_message": user_message, "error": type(error).__name__}
             )
             raise
-        encoded_evidence = json.dumps(dict(reply.evidence))
-        if len(encoded_evidence) > MAX_EVIDENCE_CHARS:
-            raise ValueError("Harness evidence is too large")
-        evidence = json.loads(encoded_evidence)
+        try:
+            encoded_evidence = json.dumps(dict(reply.evidence))
+            if len(encoded_evidence) > MAX_EVIDENCE_CHARS:
+                raise ValueError("Harness evidence is too large")
+            evidence = json.loads(encoded_evidence)
+        except Exception as error:
+            evidence_error = type(error).__name__
+            self.events.append(
+                {
+                    "role": "assistant",
+                    "content": reply.message,
+                    "evidence_error": evidence_error,
+                    "timestamp": _timestamp(),
+                }
+            )
+            self.exchanges.append(
+                {
+                    "user_message": user_message,
+                    "assistant_message": reply.message,
+                    "evidence_error": evidence_error,
+                }
+            )
+            raise
         self.events.append(
             {
                 "role": "assistant",

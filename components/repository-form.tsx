@@ -1,11 +1,14 @@
 "use client";
 
 import { useActionState } from "react";
+import { ScanSearch } from "lucide-react";
 
 import {
   analyzeRepository,
   type AnalyzeRepositoryState,
 } from "@/app/actions";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 
 const initialState: AnalyzeRepositoryState = { status: "idle" };
 
@@ -16,44 +19,34 @@ export function RepositoryForm() {
   );
 
   return (
-    <form action={formAction} className="border border-border bg-surface">
-      <div className="flex flex-col gap-2 p-3 sm:flex-row sm:items-center">
-        <label
-          htmlFor="repository-url"
-          className="shrink-0 font-mono text-[10px] font-medium text-muted"
-        >
-          Public repository
-        </label>
-        <input
-          id="repository-url"
-          name="repositoryUrl"
-          type="url"
-          inputMode="url"
-          required
-          autoComplete="url"
-          placeholder="https://github.com/owner/repository"
-          aria-describedby="repository-form-status"
-          className="h-8 min-w-0 flex-1 border border-border bg-background px-2.5 font-mono text-[11px] outline-none placeholder:text-muted focus:border-accent"
-        />
-        <button
-          type="submit"
-          disabled={pending}
-          className="h-8 shrink-0 border border-foreground bg-foreground px-4 font-mono text-[10px] font-semibold text-surface hover:border-accent hover:bg-accent disabled:cursor-wait disabled:opacity-60"
-        >
-          {pending ? "Starting..." : "Analyse repository"}
-        </button>
+    <form action={formAction}>
+      <label htmlFor="repository-url" className="block text-sm font-semibold">Repository URL</label>
+      <div className="mt-2 flex flex-col gap-2 sm:flex-row">
+        <div className="min-w-0 flex-1">
+          <Input
+            id="repository-url"
+            name="repositoryUrl"
+            type="url"
+            inputMode="url"
+            required
+            autoComplete="url"
+            placeholder="https://github.com/owner/repository"
+            aria-describedby="repository-form-status"
+            className="h-11 rounded-md bg-background px-3 font-mono text-sm placeholder:text-muted-foreground dark:bg-background"
+          />
+        </div>
+        <Button type="submit" disabled={pending} className="h-11 shrink-0 rounded-md bg-foreground px-5 text-sm font-semibold text-background hover:bg-foreground/85 focus-visible:ring-imports disabled:cursor-wait">
+          <ScanSearch aria-hidden="true" className="size-3.5" />
+          {pending ? "Starting analysis..." : "Analyse repository"}
+        </Button>
       </div>
-      <div className="flex min-h-7 items-center border-t border-border bg-surface-muted px-3">
-        <p
-          id="repository-form-status"
-          aria-live="polite"
-          className={`text-[10px] ${
-            state.status === "error" ? "text-red-700 dark:text-red-400" : "text-muted"
-          }`}
-        >
-          {state.message ?? "Public GitHub repositories only. No repository token is stored."}
-        </p>
-      </div>
+      <p
+        id="repository-form-status"
+        aria-live="polite"
+        className={`mt-2 text-xs leading-5 ${state.status === "error" ? "text-red-700 dark:text-red-400" : "text-muted-foreground"}`}
+      >
+        {state.message ?? "Public JavaScript or TypeScript repositories only."}
+      </p>
     </form>
   );
 }

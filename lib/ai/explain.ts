@@ -122,7 +122,11 @@ export const explainTarget = traceable(
     const { data: cached, error: cacheError } = await cacheQuery.maybeSingle();
     if (cacheError) throw cacheError;
     if (cached) {
-      await evaluateInventedPathsLive(cached.content, [...availablePaths]);
+      try {
+        await evaluateInventedPathsLive(cached.content, [...availablePaths]);
+      } catch (error) {
+        console.error("Invented path evaluation failed", error);
+      }
       return {
         status: "ready",
         content: cached.content,
@@ -144,7 +148,11 @@ export const explainTarget = traceable(
       }),
     };
     const content = await generateExplanation(promptInput);
-    await evaluateInventedPathsLive(content, [...availablePaths]);
+    try {
+      await evaluateInventedPathsLive(content, [...availablePaths]);
+    } catch (error) {
+      console.error("Invented path evaluation failed", error);
+    }
     const shownPaths = [...availablePaths]
       .filter((path) => content.includes(path))
       .toSorted((left, right) => right.length - left.length || left.localeCompare(right));

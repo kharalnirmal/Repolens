@@ -178,6 +178,12 @@ export type Database = {
           was_created: boolean;
         }[];
       };
+      delete_repository_project: {
+        Args: {
+          p_project_id: string;
+        };
+        Returns: boolean;
+      };
       get_analysis_graph: {
         Args: {
           p_analysis_id: string;

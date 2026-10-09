@@ -59,8 +59,18 @@ class ModelUser:
             self.records.append(record)
             raise SimulatorProtocolError(message, evidence=record) from error
 
-        if len(json.dumps(observation, default=str)) > MAX_CONTEXT_CHARS:
-            raise SimulatorProtocolError("user observation is too large")
+        observation_json = json.dumps(observation, default=str)
+        observation = json.loads(observation_json)
+        if len(observation_json) > MAX_CONTEXT_CHARS:
+            message = "user observation is too large"
+            record = {
+                "decision_id": decision_id,
+                "observation": observation,
+                "attempts": [],
+                "error": message,
+            }
+            self.records.append(record)
+            raise SimulatorProtocolError(message, evidence=record)
 
         attempts: list[dict[str, object]] = []
         format_error = ""
@@ -77,7 +87,15 @@ class ModelUser:
                 }
             )
             if len(payload) > MAX_CONTEXT_CHARS:
-                raise SimulatorProtocolError("simulator context is too large")
+                message = "simulator context is too large"
+                record = {
+                    "decision_id": decision_id,
+                    "observation": observation,
+                    "attempts": attempts,
+                    "error": message,
+                }
+                self.records.append(record)
+                raise SimulatorProtocolError(message, evidence=record)
             try:
                 raw = await self._call_model(SIMULATOR_SYSTEM, payload)
             except Exception as error:
