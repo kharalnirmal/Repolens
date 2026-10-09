@@ -20,9 +20,11 @@ import {
 } from "@xyflow/react";
 import { Graph, layout } from "@dagrejs/dagre";
 import {
+  Filter,
   FolderTree,
   LayoutDashboard,
   MessageSquareText,
+  Network,
   Sparkles,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState, useTransition } from "react";
@@ -89,6 +91,7 @@ type HoveredSelection = Exclude<Selection, null> & { source: "canvas" | "detail"
 
 type DetailTab = "structure" | "explanation";
 type PaneMode = "overview" | "ask";
+type MobilePane = "filters" | "map" | "details";
 
 interface ModuleNodeData extends Record<string, unknown> {
   folderNode: FoldedNode;
@@ -142,6 +145,7 @@ function Canvas({
   const [hovered, setHovered] = useState<HoveredSelection | null>(null);
   const [detailTab, setDetailTab] = useState<DetailTab>("structure");
   const [paneMode, setPaneMode] = useState<PaneMode>("overview");
+  const [mobilePane, setMobilePane] = useState<MobilePane>("map");
   const [activeRole, setActiveRole] = useState<string | null>(null);
   const [refitVersion, setRefitVersion] = useState(0);
   const [explanations, setExplanations] = useState<Record<string, ExplanationResult>>({});
@@ -344,18 +348,43 @@ function Canvas({
     <div className="flex h-dvh min-h-96 flex-col overflow-hidden bg-background text-foreground">
       <WorkspaceHeader projectName={repositoryName} />
 
-      <div className="grid min-h-0 flex-1 grid-cols-[3rem_minmax(18rem,1fr)_18rem] overflow-x-auto md:grid-cols-[11rem_minmax(18rem,1fr)_18rem]">
+      <nav
+        aria-label="Analysis views"
+        className="grid h-11 shrink-0 grid-cols-3 border-b border-border bg-background md:hidden"
+      >
+        {([
+          { key: "filters", label: "Filters", icon: Filter },
+          { key: "map", label: "Map", icon: Network },
+          { key: "details", label: "Details", icon: LayoutDashboard },
+        ] as const).map(({ key, label, icon: Icon }) => (
+          <button
+            aria-pressed={mobilePane === key}
+            className={`flex min-w-0 items-center justify-center gap-1.5 border-b-2 px-2 text-[11px] font-semibold outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-imports ${
+              mobilePane === key
+                ? "border-imports text-foreground"
+                : "border-transparent text-muted-foreground"
+            }`}
+            key={key}
+            onClick={() => setMobilePane(key)}
+            type="button"
+          >
+            <Icon aria-hidden="true" className="size-3.5" />
+            {label}
+          </button>
+        ))}
+      </nav>
+
+      <div className="grid min-h-0 flex-1 grid-cols-1 overflow-hidden md:grid-cols-[11rem_minmax(18rem,1fr)_18rem]">
         <aside
           aria-label="File categories"
-          className="tool-scrollbar min-h-0 overflow-y-auto border-r border-border bg-background"
+          className={`${mobilePane === "filters" ? "block" : "hidden"} tool-scrollbar min-h-0 overflow-y-auto bg-background md:block md:border-r md:border-border`}
         >
-          <div className="flex h-11 items-center justify-center px-3 md:justify-start">
+          <div className="flex h-11 items-center px-3">
             <span className="text-[10px] font-semibold text-muted-foreground">
-              <span className="md:hidden">F</span>
-              <span className="hidden md:inline">File roles</span>
+              File roles
             </span>
           </div>
-          <div className="hidden space-y-1 px-2 pb-3 md:block">
+          <div className="space-y-1 px-2 pb-3">
             <button
               aria-pressed={activeRole === null}
               className={`grid w-full grid-cols-[8px_1fr_auto] items-center gap-2 rounded-md border px-2.5 py-2 text-left text-[11px] outline-none focus-visible:ring-2 focus-visible:ring-imports ${
@@ -391,38 +420,9 @@ function Canvas({
               </button>
             ))}
           </div>
-          <div className="flex flex-col items-center gap-2 py-3 md:hidden">
-            <button
-              aria-label={`All: ${fileCount} files`}
-              aria-pressed={activeRole === null}
-              className={`grid size-6 place-items-center rounded-md border text-[9px] font-semibold outline-none focus-visible:ring-2 focus-visible:ring-imports ${
-                activeRole === null ? "border-foreground" : "border-transparent"
-              }`}
-              onClick={() => setActiveRole(null)}
-              title={`All: ${fileCount}`}
-              type="button"
-            >
-              A
-            </button>
-            {displayedCategories.map((category) => (
-              <button
-                aria-label={`${category.label}: ${category.count} files`}
-                aria-pressed={activeRole === category.role}
-                className={`grid size-6 place-items-center rounded-md border outline-none focus-visible:ring-2 focus-visible:ring-imports ${
-                  activeRole === category.role ? "border-foreground" : "border-transparent"
-                }`}
-                key={category.role}
-                onClick={() => setActiveRole(category.role)}
-                title={`${category.label}: ${category.count}`}
-                type="button"
-              >
-                <span className="block size-2 rounded-sm" style={{ backgroundColor: category.color }} />
-              </button>
-            ))}
-          </div>
         </aside>
 
-        <main className="relative min-h-0 min-w-0 bg-background">
+        <main className={`${mobilePane === "map" ? "block" : "hidden"} relative min-h-0 min-w-0 bg-background md:block`}>
           <ReactFlow<ModuleFlowNode, DependencyFlowEdge>
             nodes={nodes}
             edges={edges}
@@ -461,9 +461,9 @@ function Canvas({
               className="!overflow-hidden !rounded-md !border !border-border !bg-surface !shadow-none [&_button]:!border-border [&_button]:!bg-surface [&_button]:!fill-foreground"
             />
           </ReactFlow>
-          <div className="pointer-events-none absolute left-3 top-3 rounded-md border border-border bg-background/90 px-2.5 py-2 font-mono text-[10px] shadow-sm backdrop-blur-sm">
+          <div className="pointer-events-none absolute left-3 right-3 top-3 w-fit max-w-[calc(100%-1.5rem)] rounded-md border border-border bg-background/90 px-2.5 py-2 font-mono text-[10px] shadow-sm backdrop-blur-sm md:right-auto">
             <p className="mb-1.5 text-muted-foreground">Arrow flows from importer to imported file</p>
-            <div className="flex items-center gap-3">
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
               <span className="flex items-center gap-1.5 text-imported-by">
                 <svg aria-hidden="true" className="h-2 w-5" viewBox="0 0 20 8">
                   <path d="M19 4 H2 M5 1 L2 4 L5 7" fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" />
@@ -485,7 +485,7 @@ function Canvas({
 
         <aside
           aria-label="Details"
-           className="flex min-h-0 flex-col border-l border-border bg-background"
+          className={`${mobilePane === "details" ? "flex" : "hidden"} min-h-0 flex-col bg-background md:flex md:border-l md:border-border`}
         >
           <Tabs
             className="flex min-h-0 flex-1 gap-0"

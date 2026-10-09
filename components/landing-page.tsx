@@ -54,12 +54,20 @@ function ProductImage() {
   return (
     <div className="relative h-full w-full bg-black">
       <Image
+        src="/mobile.png"
+        alt="RepoLens dependency map of a repository"
+        fill
+        priority
+        sizes="100vw"
+        className="object-cover object-center md:hidden"
+      />
+      <Image
         src="/landing.png"
         alt="RepoLens dependency map of a repository"
         fill
         priority
         sizes="(max-width: 1140px) 100vw, 1140px"
-        className="object-contain object-center"
+        className="hidden object-cover object-center md:block"
       />
     </div>
   );

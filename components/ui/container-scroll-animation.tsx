@@ -39,7 +39,7 @@ export function ContainerScroll({
     <div
       ref={containerRef}
       className={cn(
-        "relative flex h-[60rem] items-center justify-center px-6 py-12 md:h-[78rem] md:py-20",
+        "relative flex h-[78rem] items-center justify-center px-6 py-12 md:py-20",
         className,
       )}
     >
@@ -59,9 +59,9 @@ export function ContainerScroll({
             boxShadow:
               "0 9px 20px rgb(0 0 0 / 0.12), 0 36px 52px rgb(0 0 0 / 0.09), 0 78px 84px rgb(0 0 0 / 0.05)",
           }}
-          className="mx-auto mt-14 w-full max-w-[1140px] origin-center rounded-lg border border-border bg-surface-muted p-2 sm:p-3"
+          className="mx-auto mt-14 w-full max-w-[30rem] origin-center rounded-lg border border-border bg-surface-muted p-2 sm:p-3 md:max-w-[1140px]"
         >
-          <div className="aspect-[1917/917] w-full overflow-hidden rounded-md border border-border bg-black">
+          <div className="aspect-[3/5] w-full overflow-hidden rounded-md border border-border bg-black md:aspect-[1917/917]">
             {children}
           </div>
         </motion.div>
