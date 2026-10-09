@@ -1,8 +1,12 @@
+import "server-only";
+
+import { ChatGoogle } from "@langchain/google/node";
 import OpenAI from "openai";
 import { wrapOpenAI } from "langsmith/wrappers";
 
 export const explanationModel = "gemini-3.5-flash-lite";
 export const classificationModel = "gemini-3.5-flash-lite";
+export const assistantModel = "gemini-3.5-flash-lite";
 
 export const tracingConfigured =
   process.env.LANGSMITH_TRACING === "true" &&
@@ -22,8 +26,23 @@ function createAIClient() {
 }
 
 let client: ReturnType<typeof createAIClient> | undefined;
+let agentModel: ChatGoogle | undefined;
 
 export function getAIClient() {
   client ??= createAIClient();
   return client;
+}
+
+export function getAgentModel() {
+  const apiKey = process.env.GEMINI_API_KEY?.trim();
+  if (!apiKey) {
+    throw new Error("Missing required environment variable: GEMINI_API_KEY");
+  }
+
+  agentModel ??= new ChatGoogle({
+    apiKey,
+    model: assistantModel,
+    streaming: true,
+  });
+  return agentModel;
 }

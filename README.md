@@ -16,18 +16,18 @@ NEXT_PUBLIC_CLERK_SIGN_IN_FALLBACK_REDIRECT_URL=/
 NEXT_PUBLIC_CLERK_SIGN_UP_FALLBACK_REDIRECT_URL=/
 NEXT_PUBLIC_SUPABASE_URL=
 NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=
+SUPABASE_SECRET_KEY=
+GEMINI_API_KEY=
 REPOLENS_AGENT_CREDENTIAL_SECRET=
-REPOLENS_AGENT_URL=
-LANGSMITH_API_KEY=
+LANGSMITH_TRACING=false
 ```
 
 Generate `REPOLENS_AGENT_CREDENTIAL_SECRET` with `openssl rand -base64 32`. It
-signs and encrypts five-minute credentials delegated to the standalone agent.
+keeps the standalone agent credential endpoints available as a rollback path.
 
-`REPOLENS_AGENT_URL` is the agent server URL from the `repolens-agent`
-project (`mda dev` or `mda deploy`). `LANGSMITH_API_KEY` also authenticates
-the app to that server. Until both are set, Ask reports the agent as
-unreachable and the map keeps working.
+Ask runs inside the Next.js server application and uses `GEMINI_API_KEY`
+directly. It does not require a LangSmith deployment. Keep
+`LANGSMITH_TRACING=false` for the zero-cost configuration.
 
 In Clerk, enable Organizations and configure:
 

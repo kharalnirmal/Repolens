@@ -36,14 +36,35 @@ interface Turn {
   error: string | null;
 }
 
+interface ChatHistoryMessage {
+  role: "user" | "assistant";
+  text: string;
+}
+
 export function AskPanel({
   analysisId,
   selectedPath,
   knownPaths,
   onSelectFile,
 }: AskPanelProps) {
+  return (
+    <AskPanelConversation
+      analysisId={analysisId}
+      key={analysisId}
+      knownPaths={knownPaths}
+      onSelectFile={onSelectFile}
+      selectedPath={selectedPath}
+    />
+  );
+}
+
+function AskPanelConversation({
+  analysisId,
+  selectedPath,
+  knownPaths,
+  onSelectFile,
+}: AskPanelProps) {
   const [turns, setTurns] = useState<Turn[]>([]);
-  const [threadId, setThreadId] = useState<string | null>(null);
   const [draft, setDraft] = useState("");
   const [sending, setSending] = useState(false);
   const nextId = useRef(1);
@@ -70,6 +91,7 @@ export function AskPanel({
     abort.current?.abort();
     const controller = new AbortController();
     abort.current = controller;
+    const history = buildChatHistory(turns);
     setSending(true);
     setTurns((current) => [
       ...current,
@@ -86,7 +108,7 @@ export function AskPanel({
       const response = await fetch(`/api/analyses/${analysisId}/agent-chat`, {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ message: question, selectedPath, threadId }),
+        body: JSON.stringify({ message: question, selectedPath, history }),
         signal: controller.signal,
       });
       if (!response.ok || !response.body) {
@@ -95,7 +117,6 @@ export function AskPanel({
         return;
       }
       await readAgentStream(response.body, {
-        onThread: (id) => setThreadId(id),
         onToolCall: (step) =>
           patchAssistant((turn) => ({ ...turn, tools: [...turn.tools, step] })),
         onToken: (text) =>
@@ -105,7 +126,12 @@ export function AskPanel({
       });
       patchAssistant((turn) => ({ ...turn, pending: false }));
     } catch (error) {
-      if (controller.signal.aborted) return;
+      if (controller.signal.aborted) {
+        setTurns((current) =>
+          current.filter((turn) => turn.id !== userId && turn.id !== assistantId),
+        );
+        return;
+      }
       console.error("Ask failed", error);
       patchAssistant((turn) => ({
         ...turn,
@@ -113,8 +139,10 @@ export function AskPanel({
         error: "Agent is unreachable right now",
       }));
     } finally {
-      if (abort.current === controller) abort.current = null;
-      setSending(false);
+      if (abort.current === controller) {
+        abort.current = null;
+        setSending(false);
+      }
     }
   };
 
@@ -131,10 +159,7 @@ export function AskPanel({
           <Button
             className="h-6 rounded-sm px-2 text-[9px] text-muted-foreground transition-none hover:text-foreground disabled:pointer-events-auto disabled:cursor-wait disabled:opacity-100"
             disabled={sending}
-            onClick={() => {
-              setTurns([]);
-              setThreadId(null);
-            }}
+            onClick={() => setTurns([])}
             size="xs"
             type="button"
             variant="ghost"
@@ -389,7 +414,6 @@ function describeToolStep(step: ToolStep): { label: string; detail: string | nul
 async function readAgentStream(
   body: ReadableStream<Uint8Array>,
   handlers: {
-    onThread: (threadId: string) => void;
     onToolCall: (step: ToolStep) => void;
     onToken: (text: string) => void;
     onError: (message: string) => void;
@@ -413,7 +437,6 @@ async function readAgentStream(
 function dispatchFrame(
   frame: string,
   handlers: {
-    onThread: (threadId: string) => void;
     onToolCall: (step: ToolStep) => void;
     onToken: (text: string) => void;
     onError: (message: string) => void;
@@ -433,9 +456,7 @@ function dispatchFrame(
     return;
   }
   if (!isRecord(data)) return;
-  if (event === "thread" && typeof data.threadId === "string") {
-    handlers.onThread(data.threadId);
-  } else if (
+  if (
     event === "tool_call" &&
     typeof data.id === "string" &&
     typeof data.name === "string" &&
@@ -447,6 +468,23 @@ function dispatchFrame(
   } else if (event === "error" && typeof data.message === "string") {
     handlers.onError(data.message);
   }
+}
+
+function buildChatHistory(turns: readonly Turn[]): ChatHistoryMessage[] {
+  const history: ChatHistoryMessage[] = [];
+  let totalLength = 0;
+
+  for (let index = turns.length - 1; index >= 0 && history.length < 12; index -= 1) {
+    const turn = turns[index];
+    const text = turn.text.trim();
+    if (!text) continue;
+    if (text.length > 4000) break;
+    if (totalLength + text.length > 24_000) break;
+    history.push({ role: turn.role, text });
+    totalLength += text.length;
+  }
+
+  return history.reverse();
 }
 
 async function readErrorMessage(response: Response): Promise<string> {

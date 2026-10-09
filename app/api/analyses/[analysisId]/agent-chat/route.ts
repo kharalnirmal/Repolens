@@ -1,21 +1,20 @@
 import { auth } from "@clerk/nextjs/server";
-import { Client } from "@langchain/langgraph-sdk";
 import { NextResponse } from "next/server";
 
-import { mintAnalysisCredential } from "@/lib/agent/analysis-credential";
+import {
+  ChatRequestError,
+  readChatRequest,
+} from "@/lib/agent/chat-request";
+import {
+  createRepositoryAgent,
+  isEmbeddedRepositoryToolName,
+} from "@/lib/agent/embedded-agent";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 
 export const maxDuration = 300;
 
-// The assistant id is the agent project's name, which MDA publishes as the
-// deployment's assistant. The analysis credential travels as run context, so
-// the relay uses the SDK's runs stream (whose payload carries context) rather
-// than the thread-stream run entry point (whose params have no context field).
-const agentAssistantId = "repolens-agent";
-const maxQuestionLength = 4000;
 const maxArgSummaryLength = 300;
-const uuidPattern =
-  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const agentRecursionLimit = 20;
 
 export async function POST(
   request: Request,
@@ -32,21 +31,15 @@ export async function POST(
   } catch {
     return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
   }
-  const { message, selectedPath, threadId } = readChatRequest(body);
-  if (!message) {
-    return NextResponse.json(
-      { error: "message must be a non-empty string" },
-      { status: 400 },
-    );
-  }
 
-  const agentUrl = process.env.REPOLENS_AGENT_URL?.trim();
-  const agentApiKey = process.env.LANGSMITH_API_KEY?.trim();
-  if (!agentUrl || !agentApiKey) {
-    return NextResponse.json(
-      { error: "Agent is not configured" },
-      { status: 503 },
-    );
+  let chatRequest;
+  try {
+    chatRequest = readChatRequest(body);
+  } catch (error) {
+    if (error instanceof ChatRequestError) {
+      return NextResponse.json({ error: error.message }, { status: 400 });
+    }
+    throw error;
   }
 
   const { analysisId } = await params;
@@ -74,61 +67,16 @@ export async function POST(
     );
   }
 
-  const accessToken = await authentication.getToken();
-  if (!accessToken) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
-
-  const client = new Client({ apiUrl: agentUrl, apiKey: agentApiKey });
-  const threadMetadata = {
-    repolens_analysis_id: analysis.id,
-    repolens_organization_id: authentication.orgId,
-    repolens_user_id: authentication.userId,
-  };
-  let resolvedThreadId = threadId;
-  if (resolvedThreadId) {
-    let existingThread;
-    try {
-      existingThread = await client.threads.get(resolvedThreadId);
-    } catch {
-      return NextResponse.json({ error: "Thread not found" }, { status: 404 });
-    }
-    const metadata =
-      (existingThread.metadata ?? {}) as Record<string, unknown>;
-    if (
-      metadata.repolens_analysis_id !== threadMetadata.repolens_analysis_id ||
-      metadata.repolens_organization_id !==
-        threadMetadata.repolens_organization_id ||
-      metadata.repolens_user_id !== threadMetadata.repolens_user_id
-    ) {
-      return NextResponse.json({ error: "Thread not found" }, { status: 404 });
-    }
-  } else {
-    try {
-      const thread = await client.threads.create({
-        metadata: threadMetadata,
-      });
-      resolvedThreadId = thread.thread_id;
-    } catch (streamError) {
-      console.error("Agent is unreachable", streamError);
-      return NextResponse.json(
-        { error: "Agent is unreachable right now" },
-        { status: 502 },
-      );
-    }
-  }
-
-  // The credential is minted and consumed server-side; the browser only ever
-  // sees the thread id. The agent learns the analysis solely from the context.
-  const { credential } = mintAnalysisCredential({
-    analysisId: analysis.id,
-    organizationId: analysis.organization_id,
-    projectId: analysis.project_id,
-    accessToken,
-  });
-  const content = selectedPath
-    ? `Selected file: ${selectedPath}\n\n${message}`
-    : message;
+  // Tool closures are created only after RLS and the explicit tenant check have
+  // authorized this exact analysis. The model never receives tenant selectors.
+  const agent = createRepositoryAgent(supabase, analysis.id);
+  const content = chatRequest.selectedPath
+    ? `Selected file: ${chatRequest.selectedPath}\n\n${chatRequest.message}`
+    : chatRequest.message;
+  const messages = [
+    ...chatRequest.history.map(({ role, text }) => ({ role, content: text })),
+    { role: "user" as const, content },
+  ];
 
   const stream = new ReadableStream({
     async start(controller) {
@@ -139,39 +87,53 @@ export async function POST(
           ),
         );
       };
-      const seenToolCalls = new Set<string>();
+      let completedRepositoryTool = false;
+
       try {
-        send("thread", { threadId: resolvedThreadId });
-        // "messages-tuple" yields per-token message deltas; the "messages"
-        // mode yields cumulative partials that would repeat tokens.
-        const run = client.runs.stream(resolvedThreadId, agentAssistantId, {
-          input: { messages: [{ role: "user", content }] },
-          context: { analysisCredential: credential },
-          streamMode: ["updates", "messages-tuple"],
-          signal: request.signal,
-        });
-        for await (const chunk of run) {
-          if (chunk.event === "error") {
-            throw new Error(readAgentError(chunk.data));
-          } else if (chunk.event === "updates") {
-            for (const call of readToolCalls(chunk.data)) {
-              if (seenToolCalls.has(call.id)) continue;
-              seenToolCalls.add(call.id);
-              send("tool_call", {
-                id: call.id,
-                name: call.name,
-                detail: summarizeArgs(call.args),
-              });
-            }
-          } else if (chunk.event === "messages") {
-            const text = readTokenText(chunk.data);
-            if (text) send("token", { text });
+        const events = agent.streamEvents(
+          { messages },
+          {
+            version: "v2",
+            recursionLimit: agentRecursionLimit,
+            signal: request.signal,
+          },
+        );
+
+        for await (const event of events) {
+          if (
+            event.event === "on_tool_start" &&
+            isEmbeddedRepositoryToolName(event.name)
+          ) {
+            send("tool_call", {
+              id: event.run_id,
+              name: event.name,
+              detail: summarizeArgs(event.data.input),
+            });
+          } else if (
+            event.event === "on_tool_end" &&
+            isEmbeddedRepositoryToolName(event.name)
+          ) {
+            completedRepositoryTool = true;
+          } else if (event.event === "on_chat_model_stream") {
+            const text = readTokenText(event.data.chunk);
+            if (text && completedRepositoryTool) send("token", { text });
           }
+        }
+
+        if (!completedRepositoryTool) {
+          throw new Error("Agent completed without repository evidence");
         }
         send("done", {});
         controller.close();
       } catch (streamError) {
-        if (request.signal.aborted) return;
+        if (request.signal.aborted) {
+          try {
+            controller.close();
+          } catch {
+            // The browser already closed the response stream.
+          }
+          return;
+        }
         console.error("Agent run failed", streamError);
         try {
           send("error", {
@@ -187,9 +149,6 @@ export async function POST(
         }
       }
     },
-    cancel() {
-      // Closing the browser connection aborts the SDK request via the signal.
-    },
   });
 
   return new Response(stream, {
@@ -200,62 +159,13 @@ export async function POST(
   });
 }
 
-function readChatRequest(body: unknown): {
-  message: string | null;
-  selectedPath: string | null;
-  threadId: string | null;
-} {
-  if (!isRecord(body)) return { message: null, selectedPath: null, threadId: null };
-  const message =
-    typeof body.message === "string" && body.message.trim().length > 0
-      ? body.message.trim().slice(0, maxQuestionLength)
-      : null;
-  const selectedPath =
-    typeof body.selectedPath === "string" && body.selectedPath.trim().length > 0
-      ? body.selectedPath.trim().slice(0, 500)
-      : null;
-  const threadId =
-    typeof body.threadId === "string" && uuidPattern.test(body.threadId)
-      ? body.threadId
-      : null;
-  return { message, selectedPath, threadId };
-}
+function readTokenText(value: unknown): string | null {
+  if (!isRecord(value)) return null;
+  if (typeof value.content === "string") return value.content || null;
+  if (!Array.isArray(value.content)) return null;
 
-function readToolCalls(data: unknown): Array<{
-  id: string;
-  name: string;
-  args: Record<string, unknown>;
-}> {
-  if (!isRecord(data)) return [];
-  const calls: Array<{ id: string; name: string; args: Record<string, unknown> }> = [];
-  for (const nodeValue of Object.values(data)) {
-    if (!isRecord(nodeValue) || !Array.isArray(nodeValue.messages)) continue;
-    for (const message of nodeValue.messages) {
-      if (!isRecord(message) || !Array.isArray(message.tool_calls)) continue;
-      for (const call of message.tool_calls) {
-        if (!isRecord(call)) continue;
-        if (typeof call.id !== "string" || typeof call.name !== "string") {
-          continue;
-        }
-        calls.push({
-          id: call.id,
-          name: call.name,
-          args: isRecord(call.args) ? call.args : {},
-        });
-      }
-    }
-  }
-  return calls;
-}
-
-function readTokenText(data: unknown): string | null {
-  if (!Array.isArray(data) || data.length === 0) return null;
-  const chunk = data[0];
-  if (!isRecord(chunk) || chunk.type !== "ai") return null;
-  if (typeof chunk.content === "string") return chunk.content || null;
-  if (!Array.isArray(chunk.content)) return null;
   let text = "";
-  for (const part of chunk.content) {
+  for (const part of value.content) {
     if (isRecord(part) && part.type === "text" && typeof part.text === "string") {
       text += part.text;
     }
@@ -263,21 +173,10 @@ function readTokenText(data: unknown): string | null {
   return text || null;
 }
 
-function readAgentError(data: unknown): string {
-  if (!isRecord(data)) return "Agent run failed";
-  if (typeof data.message === "string" && data.message.trim()) {
-    return data.message;
-  }
-  if (typeof data.error === "string" && data.error.trim()) {
-    return data.error;
-  }
-  return "Agent run failed";
-}
-
-function summarizeArgs(args: Record<string, unknown>): string {
-  const summary = JSON.stringify(args);
+function summarizeArgs(value: unknown): string {
+  const summary = JSON.stringify(isRecord(value) ? value : {});
   return summary.length > maxArgSummaryLength
-    ? `${summary.slice(0, maxArgSummaryLength)}…`
+    ? `${summary.slice(0, maxArgSummaryLength)}...`
     : summary;
 }
 
