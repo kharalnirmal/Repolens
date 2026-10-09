@@ -24,3 +24,38 @@ Do not roll back only the application after step 3. To roll back, first apply a
 reviewed database rollback that restores the previous worker function bodies
 and their `authenticated` grants, then roll back the application. This briefly
 reopens the write exposure, so roll forward instead whenever possible.
+
+## Vercel Hobby production
+
+Deploy the repository as one Next.js project using Node.js 22 or newer. Configure
+these Production values:
+
+```text
+NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY
+CLERK_SECRET_KEY
+NEXT_PUBLIC_CLERK_SIGN_IN_URL=/sign-in
+NEXT_PUBLIC_CLERK_SIGN_UP_URL=/sign-up
+NEXT_PUBLIC_CLERK_SIGN_IN_FALLBACK_REDIRECT_URL=/
+NEXT_PUBLIC_CLERK_SIGN_UP_FALLBACK_REDIRECT_URL=/
+
+NEXT_PUBLIC_SUPABASE_URL
+NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY
+SUPABASE_SECRET_KEY
+
+GEMINI_API_KEY
+REPOLENS_AGENT_CREDENTIAL_SECRET
+
+LANGSMITH_TRACING=false
+```
+
+Do not configure `REPOLENS_AGENT_URL`, `LANGSMITH_API_KEY`,
+`LANGSMITH_ENDPOINT`, `LANGSMITH_PROJECT`, or `GOOGLE_API_KEY` for this
+deployment. Secret keys must not use a `NEXT_PUBLIC_` prefix.
+
+The production Clerk organization must have a matching row in
+`public.organizations`. This private-demo deployment requires that row to be
+provisioned manually; public organization synchronization is not included.
+
+Repository analysis runs in a Next.js `after()` callback. Vercel Hobby may end
+the invocation after 300 seconds, so analysis beyond that duration is not
+durable. Do not weaken repository or parser limits to hide this hosting limit.
