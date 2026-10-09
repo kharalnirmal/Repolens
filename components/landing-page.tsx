@@ -52,14 +52,14 @@ const sectionHeading = "max-w-[18ch] font-heading text-[clamp(2.2rem,4.4vw,4rem)
 
 function ProductImage() {
   return (
-    <div className="relative h-full w-full bg-surface-muted/40">
+    <div className="relative h-full w-full bg-black">
       <Image
         src="/landing.png"
         alt="RepoLens dependency map of a repository"
         fill
         priority
         sizes="(max-width: 1140px) 100vw, 1140px"
-        className="object-cover object-top"
+        className="object-contain object-center"
       />
     </div>
   );

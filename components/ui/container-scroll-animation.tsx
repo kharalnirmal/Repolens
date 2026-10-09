@@ -59,9 +59,9 @@ export function ContainerScroll({
             boxShadow:
               "0 9px 20px rgb(0 0 0 / 0.12), 0 36px 52px rgb(0 0 0 / 0.09), 0 78px 84px rgb(0 0 0 / 0.05)",
           }}
-          className="mx-auto mt-14 h-[26rem] w-full max-w-[1140px] origin-center rounded-lg border border-border bg-surface-muted p-2 sm:h-[34rem] sm:p-3 md:h-[40rem]"
+          className="mx-auto mt-14 w-full max-w-[1140px] origin-center rounded-lg border border-border bg-surface-muted p-2 sm:p-3"
         >
-          <div className="h-full w-full overflow-hidden rounded-md border border-border bg-surface">
+          <div className="aspect-[1917/917] w-full overflow-hidden rounded-md border border-border bg-black">
             {children}
           </div>
         </motion.div>
