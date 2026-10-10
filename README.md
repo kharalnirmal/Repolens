@@ -87,6 +87,7 @@ Fill in `.env.local`:
 ```text
 NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=
 CLERK_SECRET_KEY=
+CLERK_WEBHOOK_SIGNING_SECRET=
 NEXT_PUBLIC_CLERK_SIGN_IN_URL=/sign-in
 NEXT_PUBLIC_CLERK_SIGN_UP_URL=/sign-up
 NEXT_PUBLIC_CLERK_SIGN_IN_FALLBACK_REDIRECT_URL=/
@@ -117,17 +118,18 @@ Secret values must never use a `NEXT_PUBLIC_` prefix or be committed.
 2. Keep membership optional (`force_organization_selection: false`).
 3. Enable automatic organization creation for new users.
 4. Keep the default Admin and Member roles.
+5. Create a webhook endpoint at `/api/webhooks/clerk` and subscribe only to
+   `organization.created`, `organization.updated`, and `organization.deleted`.
+6. Put that endpoint's signing secret in `CLERK_WEBHOOK_SIGNING_SECRET`.
 
 **Supabase**
 
 1. Apply every migration in `supabase/migrations/` in timestamp order.
 2. Configure Clerk under Authentication > Third-Party Auth.
 3. Confirm Clerk tokens receive the Postgres `authenticated` role.
-4. Add a `public.organizations` row matching the active Clerk organization ID.
+4. Before enabling public sign-up, confirm every existing Clerk organization has
+   a matching `public.organizations` row; backfill any missing row once.
 5. Confirm RLS is enabled and review the security and performance advisors.
-
-Organization synchronization is not automated yet. Each production Clerk
-organization must currently be added to Supabase manually.
 
 ### Run
 
@@ -167,9 +169,12 @@ Vercel project is required.
 2. Select Node.js 22 or newer and keep Fluid Compute enabled.
 3. Add all variables from `.env.example` to the Production environment.
 4. Keep `LANGSMITH_TRACING=false` for the zero-cost deployment.
-5. Apply all Supabase migrations and add the matching Clerk organization row.
+5. Apply all Supabase migrations and backfill any existing Clerk organizations.
 6. Add the production Vercel domain to Clerk's allowed domains.
-7. Deploy only after the checks below pass.
+7. Configure the production Clerk webhook at
+   `https://<your-domain>/api/webhooks/clerk` for only the three organization
+   lifecycle events.
+8. Deploy only after the checks below pass.
 
 ```bash
 pnpm typecheck

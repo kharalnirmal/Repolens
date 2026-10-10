@@ -8,8 +8,9 @@ import { revalidatePath } from "next/cache";
 import { explainTarget, type ExplanationResult, type ExplanationTarget } from "@/lib/ai/explain";
 import { runAnalysis } from "@/lib/analysis/run-analysis";
 import { parseGitHubRepositoryUrl } from "@/lib/github/repository-archive";
+import { reconcileClerkOrganization } from "@/lib/organizations/sync";
 import {
-  createAnalysisWorkerClient,
+  createPrivilegedSupabaseClient,
   createServerSupabaseClient,
 } from "@/lib/supabase/server";
 
@@ -50,6 +51,22 @@ export async function analyzeRepository(
     };
   }
 
+  try {
+    const organizationExists = await reconcileClerkOrganization(authentication.orgId);
+    if (!organizationExists) {
+      return {
+        status: "error",
+        message: "The active organization is no longer available.",
+      };
+    }
+  } catch (error) {
+    console.error("Active organization reconciliation failed", error);
+    return {
+      status: "error",
+      message: "Could not prepare the active organization. Try again.",
+    };
+  }
+
   const supabase = createServerSupabaseClient(authentication.getToken);
   const { data, error } = await supabase.rpc("create_or_get_analysis", {
     p_repository_url: repository.canonicalUrl,
@@ -68,7 +85,7 @@ export async function analyzeRepository(
     after(async () => {
       try {
         await runAnalysis(
-          createAnalysisWorkerClient(),
+          createPrivilegedSupabaseClient(),
           supabase,
           analysis.analysis_id,
         );
@@ -97,7 +114,7 @@ export async function rerunAnalysis(formData: FormData): Promise<void> {
   if (shouldRun) {
     after(async () => {
       try {
-        await runAnalysis(createAnalysisWorkerClient(), supabase, analysisId);
+        await runAnalysis(createPrivilegedSupabaseClient(), supabase, analysisId);
       } catch (pipelineError) {
         console.error("Analysis pipeline failed", pipelineError);
       }
@@ -163,7 +180,7 @@ export async function requestExplanation(
   try {
     return await explainTarget(
       createServerSupabaseClient(authentication.getToken),
-      createAnalysisWorkerClient(),
+      createPrivilegedSupabaseClient(),
       analysisId,
       target,
     );
