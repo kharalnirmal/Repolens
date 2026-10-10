@@ -4,7 +4,6 @@ import { AnalysisRealtimeRefresh } from "@/components/analysis-realtime-refresh"
 import { DeleteRepositoryButton } from "@/components/delete-repository-button";
 import { LandingPage } from "@/components/landing-page";
 import { RepositoryForm } from "@/components/repository-form";
-import { Badge } from "@/components/ui/badge";
 import { WorkspaceHeader } from "@/components/workspace-header";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 
@@ -15,17 +14,10 @@ const dateFormatter = new Intl.DateTimeFormat("en", {
 
 export const maxDuration = 300;
 
-function statusStyle(status: string) {
-  switch (status) {
-    case "completed":
-      return { dot: "bg-emerald-500", text: "text-emerald-700 dark:text-emerald-400" };
-    case "running":
-      return { dot: "bg-amber-500", text: "text-amber-700 dark:text-amber-400" };
-    case "failed":
-      return { dot: "bg-red-500", text: "text-red-700 dark:text-red-400" };
-    default:
-      return { dot: "bg-muted", text: "text-muted" };
-  }
+function statusMarker(status: string) {
+  if (status === "completed") return "bg-emerald-500";
+  if (status === "failed") return "bg-red-500";
+  return "bg-border";
 }
 
 export default async function RootPage() {
@@ -151,67 +143,62 @@ async function WorkspacePage() {
             <div>
               <div className={`hidden rounded-md bg-surface-muted/65 text-sm font-semibold tracking-[-0.015em] text-foreground sm:grid ${canDeleteRepositories ? "grid-cols-[minmax(0,1fr)_12rem_13rem_3.5rem]" : "grid-cols-[minmax(0,1fr)_12rem_13rem]"}`}>
                 <span className="py-4 pl-4 pr-5">Repository</span>
-                <span className="px-5 py-4">State</span>
+                <span className="px-5 py-4">Status</span>
                 <span className="py-4 pl-5">Created</span>
                 {canDeleteRepositories ? <span className="sr-only">Actions</span> : null}
               </div>
               <ul className="mt-1 space-y-1">
-                {analyses.map((analysis) => {
-                  const status = statusStyle(analysis.status);
-
-                  return (
-                    <li
-                      key={analysis.id}
-                      className={`group rounded-md transition-colors hover:bg-surface-muted/55 focus-within:bg-surface-muted motion-reduce:transition-none ${canDeleteRepositories ? "grid grid-cols-[minmax(0,1fr)_3.5rem]" : "block"}`}
+                {analyses.map((analysis) => (
+                  <li
+                    key={analysis.id}
+                    className={`group rounded-md transition-colors hover:bg-surface-muted/55 focus-within:bg-surface-muted motion-reduce:transition-none ${canDeleteRepositories ? "grid grid-cols-[minmax(0,1fr)_3.5rem]" : "block"}`}
+                  >
+                    <Link
+                      href={`/analyses/${analysis.id}`}
+                      className="grid min-w-0 grid-cols-2 rounded-md outline-none sm:grid-cols-[minmax(0,1fr)_12rem_13rem] sm:items-center"
                     >
-                      <Link
-                        href={`/analyses/${analysis.id}`}
-                        className="grid min-w-0 grid-cols-2 rounded-md outline-none sm:grid-cols-[minmax(0,1fr)_12rem_13rem] sm:items-center"
-                      >
-                        <div className="col-span-2 min-w-0 px-4 py-5 sm:col-span-1">
-                          <span className="mb-2 block text-sm font-semibold text-foreground sm:hidden">Repository</span>
-                          <p className="truncate text-base font-semibold tracking-[-0.015em]">
-                            {analysis.project.repository_name}
-                          </p>
-                          <p className="mt-1.5 truncate font-mono text-xs text-muted-foreground">
-                            {analysis.project.repository_url}
-                          </p>
+                      <div className="col-span-2 min-w-0 px-4 py-5 sm:col-span-1">
+                        <span className="mb-2 block text-sm font-semibold text-foreground sm:hidden">Repository</span>
+                        <p className="truncate text-base font-semibold tracking-[-0.015em]">
+                          {analysis.project.repository_name}
+                        </p>
+                        <p className="mt-1.5 truncate font-mono text-xs text-muted-foreground">
+                          {analysis.project.repository_url}
+                        </p>
+                      </div>
+                      <div className="pb-5 pr-3 sm:px-5 sm:py-5">
+                        <span className="mb-2 block text-sm font-semibold text-foreground sm:hidden">Status</span>
+                        <div className="flex min-h-9 items-stretch gap-2.5">
+                          <span className={`w-0.5 shrink-0 ${statusMarker(analysis.status)}`} />
+                          <div className="min-w-0">
+                            <p className="text-sm capitalize text-foreground">{analysis.status}</p>
+                            {analysis.stage ? (
+                              <p className="mt-1 truncate font-mono text-xs text-muted-foreground">
+                                {analysis.stage}
+                              </p>
+                            ) : null}
+                          </div>
                         </div>
-                        <div className="pb-5 pr-3 sm:px-5 sm:py-5">
-                          <span className="mb-2 block text-sm font-semibold text-foreground sm:hidden">State</span>
-                          <Badge
-                            variant="outline"
-                            className="h-6 rounded-full bg-background px-2.5 text-[13px] font-medium"
-                          >
-                            <span className={`size-1.5 ${status.dot}`} />
-                            <span className={status.text}>{analysis.status}</span>
-                          </Badge>
-                          {analysis.stage ? (
-                            <p className="mt-1.5 truncate text-xs text-muted-foreground">
-                              {analysis.stage}
-                            </p>
-                          ) : null}
-                        </div>
-                        <div className="pb-5 pl-3 sm:py-5 sm:pl-5">
-                          <span className="mb-2 block text-sm font-semibold text-foreground sm:hidden">Created</span>
-                          <time dateTime={analysis.created_at} className="font-mono text-xs leading-5 text-foreground">
-                            {dateFormatter.format(new Date(analysis.created_at))}
-                          </time>
-                        </div>
-                      </Link>
-                      {canDeleteRepositories ? (
-                        <div className="grid place-items-center">
-                          {analysis.status === "running" || analysis.status === "completed" || analysis.status === "failed" ? (
-                            <DeleteRepositoryButton
-                              projectId={analysis.project.id}
-                              repositoryName={analysis.project.repository_name}
-                            />
-                          ) : null}
-                        </div>
-                      ) : null}
-                    </li>
-                  );
-                })}
+                      </div>
+                      <div className="pb-5 pl-3 sm:py-5 sm:pl-5">
+                        <span className="mb-2 block text-sm font-semibold text-foreground sm:hidden">Created</span>
+                        <time dateTime={analysis.created_at} className="font-mono text-xs leading-5 text-foreground">
+                          {dateFormatter.format(new Date(analysis.created_at))}
+                        </time>
+                      </div>
+                    </Link>
+                    {canDeleteRepositories ? (
+                      <div className="grid place-items-center">
+                        {analysis.status === "running" || analysis.status === "completed" || analysis.status === "failed" ? (
+                          <DeleteRepositoryButton
+                            projectId={analysis.project.id}
+                            repositoryName={analysis.project.repository_name}
+                          />
+                        ) : null}
+                      </div>
+                    ) : null}
+                  </li>
+                ))}
               </ul>
             </div>
           )}
