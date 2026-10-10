@@ -33,6 +33,7 @@ these Production values:
 ```text
 NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY
 CLERK_SECRET_KEY
+CLERK_WEBHOOK_SIGNING_SECRET
 NEXT_PUBLIC_CLERK_SIGN_IN_URL=/sign-in
 NEXT_PUBLIC_CLERK_SIGN_UP_URL=/sign-up
 NEXT_PUBLIC_CLERK_SIGN_IN_FALLBACK_REDIRECT_URL=/
@@ -52,9 +53,19 @@ Do not configure `REPOLENS_AGENT_URL`, `LANGSMITH_API_KEY`,
 `LANGSMITH_ENDPOINT`, `LANGSMITH_PROJECT`, or `GOOGLE_API_KEY` for this
 deployment. Secret keys must not use a `NEXT_PUBLIC_` prefix.
 
-The production Clerk organization must have a matching row in
-`public.organizations`. This private-demo deployment requires that row to be
-provisioned manually; public organization synchronization is not included.
+Create one Clerk webhook endpoint at
+`https://<production-domain>/api/webhooks/clerk`. Subscribe only to
+`organization.created`, `organization.updated`, and `organization.deleted`, then
+store that endpoint's signing secret as `CLERK_WEBHOOK_SIGNING_SECRET` in
+Vercel. For local delivery, use Clerk's webhook relay rather than a second tunnel
+or webhook package, and put the local endpoint's separate signing secret in
+`.env.local`.
+
+Existing Clerk organizations do not emit historical creation events. Before
+enabling public sign-up, compare them with `public.organizations` and insert or
+update each missing row once. New organizations are synchronized by the webhook,
+and repository submission reconciles the active organization to cover delayed
+delivery.
 
 Repository analysis runs in a Next.js `after()` callback. Vercel Hobby may end
 the invocation after 300 seconds, so analysis beyond that duration is not

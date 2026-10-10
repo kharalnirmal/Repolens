@@ -17,7 +17,7 @@ export function createServerSupabaseClient(getToken: GetToken) {
   });
 }
 
-export function createAnalysisWorkerClient() {
+export function createPrivilegedSupabaseClient() {
   const secretKey = process.env.SUPABASE_SECRET_KEY;
   if (!secretKey?.trim()) {
     throw new Error("Missing required environment variable: SUPABASE_SECRET_KEY");

@@ -120,8 +120,16 @@ export type Database = {
           id: string;
           name: string;
         };
-        Insert: never;
-        Update: never;
+        Insert: {
+          created_at?: string;
+          id: string;
+          name: string;
+        };
+        Update: {
+          created_at?: string;
+          id?: string;
+          name?: string;
+        };
         Relationships: [];
       };
       projects: {
